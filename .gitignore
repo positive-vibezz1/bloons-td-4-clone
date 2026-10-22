@@ -1,0 +1,29 @@
+# Build & Publish outputs
+bin/
+obj/
+desktop_app/bin/
+desktop_app/obj/
+dist_app/
+*.pdb
+*.user
+*.suo
+
+# Compiled executables (uploaded to GitHub Releases)
+*.exe
+BloonsTD4.exe
+dist_app/BloonsTD4.exe
+
+# Temporary files & caches
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+desktop_app/publish_test/
+desktop_app/game_content.zip
+
+# Runtime user data & profiles
+**/WebView2Profile/
+**/EBWebView/
+.vs/
+.idea/
+.vscode/

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloons Tower Defense 4</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="assets/bloons/red.png">
+</head>
+<body>
+    <div id="gameWrapper">
+        <!-- Header Bar -->
+        <header id="gameHeader">
+            <div class="brand-section">
+                <img src="assets/logo.png" alt="Bloons TD 4" class="game-logo">
+            </div>
+
+            <div class="stats-bar">
+                <div class="stat-pill lives-pill">
+                    <img src="assets/ui/heart.png" alt="Lives" class="stat-icon">
+                    <span id="livesVal">150</span>
+                </div>
+                <div class="stat-pill cash-pill">
+                    <img src="assets/ui/coin.png" alt="Cash" class="stat-icon">
+                    <span id="cashVal">$650</span>
+                </div>
+                <div class="stat-pill round-pill">
+                    <span style="color:#aaccbb;font-size:0.95rem;">ROUND:</span>
+                    <span id="roundVal">1</span>
+                </div>
+            </div>
+
+            <div class="header-controls">
+                <button id="btnStartRound" class="ctrl-btn btn-go">GO!</button>
+                <button id="btnSpeed" class="ctrl-btn">1x SPEED</button>
+                <button id="btnAutoStart" class="ctrl-btn">AUTO</button>
+                <button id="btnPause" class="ctrl-btn">PAUSE</button>
+                <button id="btnSelectMap" class="ctrl-btn">MAPS</button>
+                <button id="btnSound" class="ctrl-btn icon-btn" title="Toggle Sound">
+                    <img id="soundIcon" src="assets/ui/sound_on.png" alt="Sound">
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Arena Area -->
+        <div id="mainArea">
+            <!-- Canvas -->
+            <div id="canvasContainer">
+                <canvas id="gameCanvas" width="960" height="540"></canvas>
+            </div>
+
+            <!-- Right Sidebar / Shop & Inspector -->
+            <aside id="sidebar">
+                <!-- Selected Tower Inspector (Shown when tower clicked) -->
+                <div id="towerInspector" class="hidden">
+                    <div class="inspector-header">
+                        <img id="inspectorImg" src="assets/towers/dart_monkey.png" alt="Tower">
+                        <div class="inspector-title">
+                            <h3 id="inspectorName">Dart Monkey</h3>
+                            <span id="inspectorPops">Pops: 0</span>
+                        </div>
+                    </div>
+
+                    <div class="priority-selector">
+                        <label for="targetPrioritySelect">Target:</label>
+                        <select id="targetPrioritySelect">
+                            <option value="first">First</option>
+                            <option value="last">Last</option>
+                            <option value="close">Close</option>
+                            <option value="strong">Strong</option>
+                        </select>
+                    </div>
+
+                    <!-- Upgrade Path 1 -->
+                    <button id="btnUpgrade1" class="upgrade-btn">
+                        <div class="up-header">
+                            <span id="up1Name">Long Range</span>
+                            <span id="up1Cost" class="up-cost">$90</span>
+                        </div>
+                        <span id="up1Desc" class="up-desc">+25% range</span>
+                    </button>
+
+                    <!-- Upgrade Path 2 -->
+                    <button id="btnUpgrade2" class="upgrade-btn">
+                        <div class="up-header">
+                            <span id="up2Name">Sharp Darts</span>
+                            <span id="up2Cost" class="up-cost">$140</span>
+                        </div>
+                        <span id="up2Desc" class="up-desc">Darts pop 2 bloons each</span>
+                    </button>
+
+                    <!-- Sell Button -->
+                    <button id="btnSell" class="btn-sell">SELL FOR $160</button>
+                </div>
+
+                <!-- Tower Shop Header -->
+                <div class="sidebar-heading">
+                    <span>TOWERS</span>
+                </div>
+
+                <!-- Towers Grid -->
+                <div id="towerShopList">
+                    <!-- Injected dynamically by game.js -->
+                </div>
+
+                <!-- Road Items Header -->
+                <div class="sidebar-heading" style="margin-top:6px;">
+                    <span>ROAD ITEMS</span>
+                </div>
+
+                <div class="road-items-bar">
+                    <div class="road-item-card" id="shop-road-spikes">
+                        <img src="assets/projectiles/road_spikes.png" class="tower-thumb" alt="Road Spikes">
+                        <div class="tower-info">
+                            <span class="tower-name">Road Spikes</span>
+                            <span class="tower-cost">$30</span>
+                        </div>
+                    </div>
+                    <div class="road-item-card" id="shop-pineapple">
+                        <img src="assets/projectiles/pineapple.png" class="tower-thumb" alt="Pineapple">
+                        <div class="tower-info">
+                            <span class="tower-name">Pineapple</span>
+                            <span class="tower-cost">$25</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- Map Selection Modal -->
+    <div id="mapSelectModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>SELECT A TRACK</h2>
+            <p>Choose your battlefield to defend against the Bloon invasion!</p>
+            <div class="map-grid">
+                <div class="map-option" data-map="monkey_lane">
+                    <img src="assets/maps/monkey_lane.png" alt="Monkey Lane">
+                    <span class="map-title">Monkey Lane</span>
+                    <span class="map-diff">Beginner</span>
+                </div>
+                <div class="map-option" data-map="desert_oasis">
+                    <img src="assets/maps/desert_oasis.png" alt="Desert Oasis">
+                    <span class="map-title">Desert Oasis</span>
+                    <span class="map-diff">Intermediate</span>
+                </div>
+                <div class="map-option" data-map="castle_moat">
+                    <img src="assets/maps/castle_moat.png" alt="Castle Moat">
+                    <span class="map-title">Castle Moat</span>
+                    <span class="map-diff">Advanced</span>
+                </div>
+            </div>
+            <button id="btnCloseMapModal" class="modal-btn">CANCEL</button>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="gameOverModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 style="color:#ff3333;">DEFEAT!</h2>
+            <p>The Bloons broke through your defenses!</p>
+            <div style="font-size:1.15rem;display:flex;justify-content:space-around;margin:10px 0;">
+                <div>Round Reached: <strong id="finalRound" style="color:#ffd700;">1</strong></div>
+                <div>Total Pops: <strong id="finalPops" style="color:#55ff77;">0</strong></div>
+            </div>
+            <button id="btnRestart" class="modal-btn">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <!-- Victory Modal -->
+    <div id="victoryModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>VICTORY!</h2>
+            <p>Congratulations! You have conquered Round 50 and saved Monkey City!</p>
+            <div style="display:flex;gap:12px;justify-content:center;margin-top:10px;">
+                <button id="btnFreeplay" class="modal-btn" style="background:linear-gradient(180deg,#ffaa00,#b86b00);">CONTINUE FREEPLAY</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Single Consolidated Game Script -->
+    <script src="btd4.bundle.js"></script>
+</body>
+</html>

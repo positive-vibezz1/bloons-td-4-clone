@@ -1,17 +1,14 @@
-// Main Bloons TD 4 Game Engine
-
+// --- 7. Main Game Controller ---
 class BTD4Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
 
-        // Responsive internal canvas dimensions (16:9)
         this.width = 960;
         this.height = 540;
         this.canvas.width = this.width;
         this.canvas.height = this.height;
 
-        // Game state
         this.currentMapId = 'monkey_lane';
         this.gameMap = new GameMap(MAP_DEFINITIONS[this.currentMapId]);
         this.spawner = new WaveSpawner();
@@ -19,7 +16,7 @@ class BTD4Game {
         this.lives = 150;
         this.cash = 650;
         this.round = 1;
-        this.speed = 1; // 1, 2, 4
+        this.speed = 1;
         this.isPaused = false;
         this.autoStart = false;
         this.roundInProgress = false;
@@ -38,17 +35,13 @@ class BTD4Game {
             cashEarned: 650
         };
 
-        // Selection & Placement
         this.selectedTower = null;
         this.placingType = null;
-        this.isPlacingTrackItem = false;
-        this.mouse = { x: 0, y: 0, inside: false };
+        this.mouse = { x: 480, y: 270, inside: false };
 
-        // Bind events
         this.setupEventListeners();
         this.setupUI();
 
-        // Game loop timing
         this.lastTime = performance.now();
         requestAnimationFrame(this.loop.bind(this));
     }
@@ -58,7 +51,6 @@ class BTD4Game {
         this.currentMapId = mapId;
         this.gameMap = new GameMap(MAP_DEFINITIONS[mapId]);
         this.resetGame();
-        this.updateUI();
     }
 
     resetGame() {
@@ -70,6 +62,7 @@ class BTD4Game {
         this.roundInProgress = false;
         this.gameOver = false;
         this.victory = false;
+        this.spawner = new WaveSpawner();
 
         this.towers = [];
         this.bloons = [];
@@ -131,6 +124,12 @@ class BTD4Game {
         window.soundEngine.init();
         window.soundEngine.playRoundStart();
         this.roundInProgress = true;
+        for (const t of this.towers) {
+            if (t.typeId === 'banana_farm') {
+                t.bananasSpawnedThisRound = 0;
+                t.cooldown = 1.5;
+            }
+        }
         this.spawner.startRound(this.round);
         this.updateUI();
     }
@@ -139,12 +138,18 @@ class BTD4Game {
         this.roundInProgress = false;
         window.soundEngine.playCoin();
 
-        // Round reward cash ($100 + round)
-        const roundReward = 100 + this.round;
-        this.addCash(roundReward);
-        this.spawnFloatingText(`Round Complete! +$${roundReward}`, this.width / 2, 80, '#32cd32');
+        let bankTotal = 0;
+        for (const t of this.towers) {
+            if (t.typeId === 'banana_farm' && t.bankBonus > 0) {
+                bankTotal += t.bankBonus;
+                this.spawnFloatingText(`+$${t.bankBonus} Bank`, t.x, t.y - 18, '#ffd700');
+            }
+        }
 
-        // Check for round 50 standard victory
+        const roundReward = 100 + this.round + bankTotal;
+        this.addCash(roundReward);
+        this.spawnFloatingText(`Round Complete! +$${100 + this.round}`, this.width / 2, 80, '#32cd32');
+
         if (this.round === 50 && !this.victory) {
             this.triggerVictory();
         }
@@ -152,13 +157,12 @@ class BTD4Game {
         this.round++;
         this.updateUI();
 
-        // Auto-start next wave if enabled
         if (this.autoStart && !this.gameOver) {
             setTimeout(() => {
                 if (this.autoStart && !this.roundInProgress && !this.gameOver) {
                     this.startRound();
                 }
-            }, 1200);
+            }, 1000);
         }
     }
 
@@ -194,15 +198,14 @@ class BTD4Game {
         this.particles.push(new FloatingText(text, x, y, color));
     }
 
-    // Input Events
     setupEventListeners() {
         const getCanvasCoords = (e) => {
             const rect = this.canvas.getBoundingClientRect();
             const scaleX = this.width / rect.width;
             const scaleY = this.height / rect.height;
             return {
-                x: (e.clientX - rect.left) * scaleX,
-                y: (e.clientY - rect.top) * scaleY
+                x: Math.max(0, Math.min(this.width, (e.clientX - rect.left) * scaleX)),
+                y: Math.max(0, Math.min(this.height, (e.clientY - rect.top) * scaleY))
             };
         };
 
@@ -212,12 +215,15 @@ class BTD4Game {
             this.mouse.y = pos.y;
             this.mouse.inside = true;
 
-            // Hover collection for dropped bananas!
             for (const b of this.droppedBananas) {
                 if (!b.markedForRemoval && Math.hypot(this.mouse.x - b.x, this.mouse.y - b.y) < 30) {
                     b.collect(this);
                 }
             }
+        });
+
+        this.canvas.addEventListener('mouseenter', () => {
+            this.mouse.inside = true;
         });
 
         this.canvas.addEventListener('mouseleave', () => {
@@ -230,7 +236,14 @@ class BTD4Game {
             this.handleCanvasClick(pos.x, pos.y);
         });
 
-        // Keyboard hotkeys
+        // Right click to cancel placement
+        this.canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.placingType = null;
+            this.selectedTower = null;
+            this.updateUI();
+        });
+
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
@@ -250,26 +263,34 @@ class BTD4Game {
     }
 
     handleCanvasClick(x, y) {
-        // 1. Placing a new tower or track item
+        // 1. Placing tower / track item
         if (this.placingType) {
             const isTrackItem = (this.placingType === 'road_spikes' || this.placingType === 'pineapple');
             const def = isTrackItem ? null : TOWER_DEFINITIONS[this.placingType];
             const isWater = def ? !!def.isWater : false;
             const cost = isTrackItem ? (this.placingType === 'road_spikes' ? 30 : 25) : def.cost;
 
-            // Check collision with other towers
             let collidesWithTower = false;
             if (!isTrackItem) {
                 for (const t of this.towers) {
-                    if (Math.hypot(x - t.x, y - t.y) < 38) {
+                    if (Math.hypot(x - t.x, y - t.y) < 36) {
                         collidesWithTower = true;
                         break;
                     }
                 }
             }
 
-            const valid = !collidesWithTower && this.gameMap.canPlaceTower(x, y, 22, isWater, isTrackItem);
-            if (valid && this.spendCash(cost)) {
+            const check = this.gameMap.canPlaceTower(x, y, 20, isWater, isTrackItem);
+            if (collidesWithTower) {
+                this.spawnFloatingText("Too close to other tower!", x, y - 20, '#ff3b30');
+                return;
+            }
+            if (!check.valid) {
+                this.spawnFloatingText(check.reason, x, y - 20, '#ff3b30');
+                return;
+            }
+
+            if (this.spendCash(cost)) {
                 window.soundEngine.playPlace();
                 if (isTrackItem) {
                     this.trackItems.push(new TrackItem(this.placingType, x, y));
@@ -292,7 +313,21 @@ class BTD4Game {
             }
         }
 
-        // 3. Mortar target reticle repositioning
+        // 3. Select tower under click (checked before Mortar reticle so players can click other towers)
+        let clickedTower = null;
+        for (const t of this.towers) {
+            if (Math.hypot(x - t.x, y - t.y) <= t.radius + 8) {
+                clickedTower = t;
+                break;
+            }
+        }
+        if (clickedTower) {
+            this.selectedTower = clickedTower;
+            this.updateUI();
+            return;
+        }
+
+        // 4. Mortar target reticle repositioning when clicking non-tower space
         if (this.selectedTower && this.selectedTower.typeId === 'mortar_monkey') {
             this.selectedTower.reticleX = x;
             this.selectedTower.reticleY = y;
@@ -300,16 +335,7 @@ class BTD4Game {
             return;
         }
 
-        // 4. Select tower under mouse
-        let clickedTower = null;
-        for (const t of this.towers) {
-            if (Math.hypot(x - t.x, y - t.y) <= t.radius + 6) {
-                clickedTower = t;
-                break;
-            }
-        }
-
-        this.selectedTower = clickedTower;
+        this.selectedTower = null;
         this.updateUI();
     }
 
@@ -332,12 +358,10 @@ class BTD4Game {
         this.updateUI();
     }
 
-    // Game Update & Render Loop
     loop(timestamp) {
         const rawDt = (timestamp - this.lastTime) / 1000;
         this.lastTime = timestamp;
 
-        // Cap dt to prevent huge leaps if tab was inactive
         const dt = Math.min(rawDt, 0.1) * (this.isPaused ? 0 : this.speed);
 
         if (!this.isPaused && !this.gameOver) {
@@ -349,26 +373,17 @@ class BTD4Game {
     }
 
     update(dt) {
-        // 1. Spawner
         this.spawner.update(dt, this);
 
-        // 2. Towers
-        for (const t of this.towers) {
-            t.update(dt, this);
-        }
+        for (const t of this.towers) t.update(dt, this);
 
-        // 3. Projectiles
-        for (const p of this.projectiles) {
-            p.update(dt, this);
-        }
+        for (const p of this.projectiles) p.update(dt, this);
         this.projectiles = this.projectiles.filter(p => !p.markedForRemoval);
 
-        // 4. Bloons
         for (let i = this.bloons.length - 1; i >= 0; i--) {
             const b = this.bloons[i];
-            b.update(dt, this.gameMap);
+            b.update(dt, this.gameMap, this);
             if (b.escaped) {
-                // Bloon reached end of track! Lose lives
                 let livesLost = b.def.tier;
                 if (b.isBlimp) livesLost = (b.typeId === 'moab' ? 40 : 100);
                 this.loseLives(livesLost);
@@ -376,63 +391,33 @@ class BTD4Game {
         }
         this.bloons = this.bloons.filter(b => !b.markedForRemoval);
 
-        // 5. Track Items (Road Spikes, Pineapple)
-        for (const item of this.trackItems) {
-            item.update(dt, this);
-        }
+        for (const item of this.trackItems) item.update(dt, this);
         this.trackItems = this.trackItems.filter(item => !item.markedForRemoval);
 
-        // 6. Dropped Bananas
-        for (const b of this.droppedBananas) {
-            b.update(dt, this);
-        }
+        for (const b of this.droppedBananas) b.update(dt, this);
         this.droppedBananas = this.droppedBananas.filter(b => !b.markedForRemoval);
 
-        // 7. Particles
-        for (const p of this.particles) {
-            p.update(dt);
-        }
+        for (const p of this.particles) p.update(dt);
         this.particles = this.particles.filter(p => !p.markedForRemoval);
     }
 
     render() {
-        // Clear screen
         this.ctx.clearRect(0, 0, this.width, this.height);
 
-        // 1. Render Map Background
         this.gameMap.render(this.ctx);
 
-        // 2. Track Items (under towers/bloons)
-        for (const item of this.trackItems) {
-            item.render(this.ctx);
-        }
+        for (const item of this.trackItems) item.render(this.ctx);
 
-        // 3. Dropped Bananas
-        for (const b of this.droppedBananas) {
-            b.render(this.ctx);
-        }
+        for (const b of this.droppedBananas) b.render(this.ctx);
 
-        // 4. Towers
-        for (const t of this.towers) {
-            t.render(this.ctx, t === this.selectedTower);
-        }
+        for (const t of this.towers) t.render(this.ctx, t === this.selectedTower);
 
-        // 5. Bloons
-        for (const b of this.bloons) {
-            b.render(this.ctx);
-        }
+        for (const b of this.bloons) b.render(this.ctx);
 
-        // 6. Projectiles
-        for (const p of this.projectiles) {
-            p.render(this.ctx);
-        }
+        for (const p of this.projectiles) p.render(this.ctx);
 
-        // 7. Particles and Floating Text
-        for (const p of this.particles) {
-            p.render(this.ctx);
-        }
+        for (const p of this.particles) p.render(this.ctx);
 
-        // 8. Tower Placement Preview under mouse
         if (this.placingType && this.mouse.inside) {
             this.renderPlacementPreview();
         }
@@ -449,37 +434,34 @@ class BTD4Game {
         let collides = false;
         if (!isTrackItem) {
             for (const t of this.towers) {
-                if (Math.hypot(x - t.x, y - t.y) < 38) {
+                if (Math.hypot(x - t.x, y - t.y) < 36) {
                     collides = true;
                     break;
                 }
             }
         }
-        const valid = !collides && this.gameMap.canPlaceTower(x, y, 22, isWater, isTrackItem);
+        const check = this.gameMap.canPlaceTower(x, y, 20, isWater, isTrackItem);
+        const valid = !collides && check.valid;
 
-        // Draw range circle
-        this.ctx.fillStyle = valid ? 'rgba(76, 217, 100, 0.22)' : 'rgba(255, 59, 48, 0.25)';
-        this.ctx.strokeStyle = valid ? 'rgba(76, 217, 100, 0.8)' : 'rgba(255, 59, 48, 0.8)';
+        this.ctx.fillStyle = valid ? 'rgba(76, 217, 100, 0.22)' : 'rgba(255, 59, 48, 0.28)';
+        this.ctx.strokeStyle = valid ? 'rgba(76, 217, 100, 0.85)' : 'rgba(255, 59, 48, 0.85)';
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         this.ctx.arc(x, y, range, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Draw tower sprite silhouette
         const spriteKey = isTrackItem ? this.placingType : def.sprite;
         const img = isTrackItem ? projImageCache[spriteKey] : towerImageCache[spriteKey];
         if (img && img.complete) {
             this.ctx.save();
-            this.ctx.globalAlpha = 0.75;
+            this.ctx.globalAlpha = 0.8;
             this.ctx.drawImage(img, x - 24, y - 24, 48, 48);
             this.ctx.restore();
         }
     }
 
-    // UI setup and bindings
     setupUI() {
-        // Tower Shop buttons
         const shopContainer = document.getElementById('towerShopList');
         shopContainer.innerHTML = '';
 
@@ -499,40 +481,52 @@ class BTD4Game {
                     this.placingType = (this.placingType === id) ? null : id;
                     this.selectedTower = null;
                     this.updateUI();
+                } else {
+                    this.spawnFloatingText("Not enough cash!", 480, 50, '#ff3b30');
                 }
             });
             shopContainer.appendChild(card);
         }
 
-        // Road Items
         document.getElementById('shop-road-spikes').addEventListener('click', () => {
             if (this.cash >= 30) {
                 this.placingType = (this.placingType === 'road_spikes') ? null : 'road_spikes';
                 this.selectedTower = null;
                 this.updateUI();
+            } else {
+                this.spawnFloatingText("Not enough cash!", 480, 50, '#ff3b30');
             }
         });
+
         document.getElementById('shop-pineapple').addEventListener('click', () => {
             if (this.cash >= 25) {
                 this.placingType = (this.placingType === 'pineapple') ? null : 'pineapple';
                 this.selectedTower = null;
                 this.updateUI();
+            } else {
+                this.spawnFloatingText("Not enough cash!", 480, 50, '#ff3b30');
             }
         });
 
-        // Top Control Buttons
         document.getElementById('btnStartRound').addEventListener('click', () => this.startRound());
         document.getElementById('btnSpeed').addEventListener('click', () => this.toggleSpeed());
         document.getElementById('btnAutoStart').addEventListener('click', () => this.toggleAutoStart());
         document.getElementById('btnPause').addEventListener('click', () => this.togglePause());
 
-        // Audio controls
         document.getElementById('btnSound').addEventListener('click', () => {
             const on = window.soundEngine.toggleSound();
             document.getElementById('soundIcon').src = on ? 'assets/ui/sound_on.png' : 'assets/ui/sound_off.png';
         });
 
-        // Upgrade and Sell buttons in inspector
+        const btnMusic = document.getElementById('btnMusic');
+        if (btnMusic) {
+            btnMusic.addEventListener('click', () => {
+                const musicOn = window.soundEngine.toggleMusic();
+                btnMusic.textContent = musicOn ? 'MUSIC: ON' : 'MUSIC: OFF';
+                btnMusic.className = musicOn ? 'ctrl-btn active' : 'ctrl-btn';
+            });
+        }
+
         document.getElementById('btnUpgrade1').addEventListener('click', () => {
             if (this.selectedTower) {
                 const up = this.selectedTower.getNextUpgrade(1);
@@ -556,28 +550,29 @@ class BTD4Game {
         });
 
         document.getElementById('btnSell').addEventListener('click', () => this.sellSelectedTower());
+
         document.getElementById('targetPrioritySelect').addEventListener('change', (e) => {
             if (this.selectedTower) {
                 this.selectedTower.targetPriority = e.target.value;
             }
         });
 
-        // Map Selection Modal
         document.getElementById('btnSelectMap').addEventListener('click', () => {
             document.getElementById('mapSelectModal').classList.remove('hidden');
         });
+
         document.querySelectorAll('.map-option').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', () => {
                 const mapId = btn.dataset.map;
                 this.setMap(mapId);
                 document.getElementById('mapSelectModal').classList.add('hidden');
             });
         });
+
         document.getElementById('btnCloseMapModal').addEventListener('click', () => {
             document.getElementById('mapSelectModal').classList.add('hidden');
         });
 
-        // Game Over & Victory restart
         document.getElementById('btnRestart').addEventListener('click', () => this.resetGame());
         document.getElementById('btnFreeplay').addEventListener('click', () => {
             document.getElementById('victoryModal').classList.add('hidden');
@@ -587,12 +582,10 @@ class BTD4Game {
     }
 
     updateUI() {
-        // Header Counters
         document.getElementById('livesVal').textContent = this.lives;
         document.getElementById('cashVal').textContent = `$${this.cash.toLocaleString()}`;
         document.getElementById('roundVal').textContent = `${this.round}`;
 
-        // Top button states
         const btnStart = document.getElementById('btnStartRound');
         btnStart.disabled = this.roundInProgress || this.gameOver;
         btnStart.textContent = this.roundInProgress ? 'IN PROGRESS' : (this.round === 1 ? 'GO!' : 'NEXT ROUND');
@@ -606,7 +599,6 @@ class BTD4Game {
         const btnPause = document.getElementById('btnPause');
         btnPause.textContent = this.isPaused ? 'RESUME' : 'PAUSE';
 
-        // Update Shop Affordability
         for (const [id, def] of Object.entries(TOWER_DEFINITIONS)) {
             const card = document.getElementById(`shop-${id}`);
             if (card) {
@@ -634,7 +626,6 @@ class BTD4Game {
             else pineCard.classList.remove('selected');
         }
 
-        // Update Selected Tower Panel
         const inspector = document.getElementById('towerInspector');
         if (this.selectedTower) {
             inspector.classList.remove('hidden');
@@ -644,7 +635,6 @@ class BTD4Game {
             document.getElementById('inspectorImg').src = TOWER_SPRITES[t.sprite];
             document.getElementById('targetPrioritySelect').value = t.targetPriority;
 
-            // Upgrade Path 1
             const up1 = t.getNextUpgrade(1);
             const btnUp1 = document.getElementById('btnUpgrade1');
             if (up1) {
@@ -659,7 +649,6 @@ class BTD4Game {
                 document.getElementById('up1Desc').textContent = 'No further upgrades available.';
             }
 
-            // Upgrade Path 2
             const up2 = t.getNextUpgrade(2);
             const btnUp2 = document.getElementById('btnUpgrade2');
             if (up2) {
@@ -674,7 +663,6 @@ class BTD4Game {
                 document.getElementById('up2Desc').textContent = 'No further upgrades available.';
             }
 
-            // Sell Button
             document.getElementById('btnSell').textContent = `SELL FOR $${t.getSellValue()}`;
         } else {
             inspector.classList.add('hidden');
@@ -682,7 +670,7 @@ class BTD4Game {
     }
 }
 
-// Boot game when DOM is loaded
+// Start game
 window.addEventListener('DOMContentLoaded', () => {
     window.game = new BTD4Game();
 });

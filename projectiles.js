@@ -1,5 +1,4 @@
-// Projectiles, Trajectories, Area Effects, and Drop Items
-
+// --- 4. Projectiles & Items ---
 const PROJ_SPRITES = {
     dart: 'assets/projectiles/dart.png',
     tack: 'assets/projectiles/tack.png',
@@ -37,7 +36,7 @@ class Projectile {
         this.type = options.type || 'dart';
         this.damage = options.damage || 1;
         this.pierce = options.pierce || 1;
-        this.speed = options.speed || 400; // pixels per sec
+        this.speed = options.speed || 400;
         this.range = options.range || 200;
         this.distTraveled = 0;
         this.radius = options.radius || 8;
@@ -48,51 +47,48 @@ class Projectile {
         this.hitBloons = new Set();
         this.markedForRemoval = false;
 
-        // Angle / Direction
         this.angle = options.angle !== undefined ? options.angle : 0;
         this.vx = Math.cos(this.angle) * this.speed;
         this.vy = Math.sin(this.angle) * this.speed;
 
-        // Curve / Boomerang properties
         this.isBoomerang = options.isBoomerang || false;
         this.boomerangTime = 0;
         this.startX = this.x;
         this.startY = this.y;
 
-        // Glaive Ricochet
         this.isGlaive = options.isGlaive || false;
         this.ricochetCount = 0;
         this.maxRicochets = options.maxRicochets || 40;
 
-        // Explosives
         this.isExplosive = options.isExplosive || false;
         this.blastRadius = options.blastRadius || 45;
         this.cluster = options.cluster || false;
         this.targetX = options.targetX;
         this.targetY = options.targetY;
 
-        // Status effects to apply
         this.freezes = options.freezes || false;
         this.freezeDuration = options.freezeDuration || 1.5;
         this.glues = options.glues || false;
         this.glueDuration = options.glueDuration || 4.0;
         this.glueSlow = options.glueSlow || 0.5;
         this.corrosive = options.corrosive || false;
+        this.glueSoak = options.glueSoak || false;
+        this.corrosiveDamage = options.corrosiveDamage || 1;
+        this.stuns = options.stuns || false;
+        this.burns = options.burns || false;
+        this.decamo = options.decamo || false;
 
         this.rotation = this.angle;
     }
 
     update(dt, game) {
-        // 1. Boomerang Curved Arc
         if (this.isBoomerang) {
             this.boomerangTime += dt * 3.2;
             this.rotation += dt * 15;
-            // Elliptical boomerang path out and back
             const t = this.boomerangTime;
             const reach = this.range * 0.9;
             const forward = Math.sin(t) * reach;
             const lateral = (1 - Math.cos(t)) * (reach * 0.45);
-
             const cosA = Math.cos(this.angle);
             const sinA = Math.sin(this.angle);
             this.x = this.startX + cosA * forward - sinA * lateral;
@@ -102,9 +98,7 @@ class Projectile {
                 this.markedForRemoval = true;
                 return;
             }
-        }
-        // 2. Linear motion
-        else {
+        } else {
             this.x += this.vx * dt;
             this.y += this.vy * dt;
             this.distTraveled += this.speed * dt;
@@ -112,7 +106,6 @@ class Projectile {
                 this.rotation += dt * 18;
             }
 
-            // Target arrival check for bombs / missiles with target point
             if (this.targetX !== undefined && this.targetY !== undefined) {
                 if (Math.hypot(this.x - this.targetX, this.y - this.targetY) < 14) {
                     this.explode(game);
@@ -121,22 +114,17 @@ class Projectile {
             }
 
             if (this.distTraveled >= this.range) {
-                if (this.isExplosive) {
-                    this.explode(game);
-                } else {
-                    this.markedForRemoval = true;
-                }
+                if (this.isExplosive) this.explode(game);
+                else this.markedForRemoval = true;
                 return;
             }
         }
 
-        // Screen boundary cull
         if (this.x < -40 || this.x > 1000 || this.y < -40 || this.y > 600) {
             this.markedForRemoval = true;
             return;
         }
 
-        // Collision check against bloons
         this.checkCollisions(game);
     }
 
@@ -146,11 +134,8 @@ class Projectile {
         for (let i = 0; i < game.bloons.length; i++) {
             const b = game.bloons[i];
             if (b.markedForRemoval || this.hitBloons.has(b)) continue;
-
-            // Camo check
             if (b.camo && !this.camo) continue;
 
-            // Hitbox distance
             const dist = Math.hypot(this.x - b.x, this.y - b.y);
             if (dist < this.radius + b.r) {
                 this.hitBloon(b, game);
@@ -167,43 +152,33 @@ class Projectile {
             return;
         }
 
-        // Apply Freeze
         if (this.freezes) {
             b.applyFreeze(this.freezeDuration);
             window.soundEngine.playFreeze();
         }
 
-        // Apply Glue
         if (this.glues) {
-            b.applyGlue(this.glueDuration, this.glueSlow, this.corrosive);
+            b.applyGlue(this.glueDuration, this.glueSlow, this.corrosive, this.glueSoak, this.corrosiveDamage);
         }
 
-        // Attack type override for lead/frozen
         let effectiveAttack = this.attackType;
-        if (this.canPopLead && b.typeId === 'lead') {
-            effectiveAttack = 'plasma';
-        }
+        if (this.canPopLead && b.typeId === 'lead') effectiveAttack = 'plasma';
+        if (this.canPopFrozen && b.freezeTimer > 0 && effectiveAttack === 'sharp') effectiveAttack = 'plasma';
 
-        // Extra damage against MOAB / BFB for MOAB Mauler / specialized towers
         let finalDamage = this.damage;
         if (b.isBlimp && this.tower && this.tower.moabDamageMultiplier) {
             finalDamage *= this.tower.moabDamageMultiplier;
         }
 
-        const res = b.takeDamage(finalDamage, effectiveAttack, this.tower);
+        const res = b.takeDamage(finalDamage, effectiveAttack, this.tower, game.gameMap);
         if (res.popped) {
             game.addCash(res.cash);
             game.stats.totalPops += res.popCount;
-            if (this.tower) {
-                this.tower.pops += res.popCount;
-            }
+            if (this.tower) this.tower.pops += res.popCount;
             window.soundEngine.playPop();
             game.spawnPopFX(b.x, b.y);
 
-            // Add newly spawned children to game
-            for (const child of res.children) {
-                game.bloons.push(child);
-            }
+            for (const child of res.children) game.bloons.push(child);
         }
 
         this.pierce--;
@@ -211,7 +186,6 @@ class Projectile {
             this.markedForRemoval = true;
         }
 
-        // Glaive Ricochet: find next nearest target
         if (this.isGlaive && this.ricochetCount < this.maxRicochets) {
             this.ricochetCount++;
             let bestTarget = null;
@@ -239,33 +213,31 @@ class Projectile {
         window.soundEngine.playExplosion();
         game.spawnExplosionFX(this.x, this.y, this.blastRadius);
 
-        // AOE damage
         for (let i = game.bloons.length - 1; i >= 0; i--) {
             const b = game.bloons[i];
             if (b.markedForRemoval) continue;
-            if (b.camo && !this.camo) continue;
+            if (b.camo && !this.camo && !this.decamo) continue;
 
             const dist = Math.hypot(this.x - b.x, this.y - b.y);
             if (dist <= this.blastRadius + b.r) {
+                if (this.decamo && b.camo) b.camo = false;
+                if (this.stuns && !b.isBlimp) b.freezeTimer = Math.max(b.freezeTimer, 1.0);
+                if (this.burns) b.burnTimer = Math.max(b.burnTimer, 4.0);
+
                 let finalDamage = this.damage;
                 if (b.isBlimp && this.tower && this.tower.moabDamageMultiplier) {
                     finalDamage *= this.tower.moabDamageMultiplier;
                 }
-                const res = b.takeDamage(finalDamage, 'explosion', this.tower);
+                const res = b.takeDamage(finalDamage, 'explosion', this.tower, game.gameMap);
                 if (res.popped) {
                     game.addCash(res.cash);
                     game.stats.totalPops += res.popCount;
-                    if (this.tower) {
-                        this.tower.pops += res.popCount;
-                    }
-                    for (const child of res.children) {
-                        game.bloons.push(child);
-                    }
+                    if (this.tower) this.tower.pops += res.popCount;
+                    for (const child of res.children) game.bloons.push(child);
                 }
             }
         }
 
-        // Cluster bombs: spawn 6 secondary bomblets
         if (this.cluster) {
             for (let i = 0; i < 6; i++) {
                 const subAngle = (Math.PI * 2 / 6) * i;
@@ -302,7 +274,6 @@ class Projectile {
             else if (this.type === 'laser_beam' || this.type === 'sun_beam') { w = 36; h = 12; }
             ctx.drawImage(img, -w / 2, -h / 2, w, h);
         } else {
-            // Fallback rendering
             ctx.fillStyle = '#ffcc00';
             ctx.beginPath();
             ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
@@ -313,42 +284,56 @@ class Projectile {
     }
 }
 
-// Track Obstacles: Road Spikes & Exploding Pineapple
 class TrackItem {
-    constructor(type, x, y) {
-        this.type = type; // 'road_spikes' or 'pineapple'
+    constructor(type, x, y, options = {}) {
+        this.type = type;
         this.x = x;
         this.y = y;
         this.radius = 20;
         this.markedForRemoval = false;
-
-        if (this.type === 'road_spikes') {
-            this.spikesRemaining = 10;
-        } else if (this.type === 'pineapple') {
-            this.timer = 3.0; // 3 second fuse
-        }
+        this.canPopLead = options.canPopLead || false;
+        this.explodesOnEnd = options.explodesOnEnd || false;
+        this.tower = options.tower || null;
+        if (this.type === 'road_spikes') this.spikesRemaining = options.spikes || 10;
+        else if (this.type === 'pineapple') this.timer = 3.0;
     }
 
     update(dt, game) {
         if (this.type === 'road_spikes') {
-            // Check collisions with bloons crossing this point
             for (let i = 0; i < game.bloons.length; i++) {
                 const b = game.bloons[i];
                 if (b.markedForRemoval) continue;
                 if (Math.hypot(this.x - b.x, this.y - b.y) <= this.radius + b.r) {
-                    const res = b.takeDamage(1, 'sharp', null);
+                    const atk = (this.canPopLead && b.typeId === 'lead') ? 'plasma' : 'sharp';
+                    const res = b.takeDamage(1, atk, this.tower, game.gameMap);
                     if (res.popped) {
                         game.addCash(res.cash);
                         game.stats.totalPops += res.popCount;
+                        if (this.tower) this.tower.pops += res.popCount;
                         window.soundEngine.playPop();
                         game.spawnPopFX(b.x, b.y);
-                        for (const child of res.children) {
-                            game.bloons.push(child);
-                        }
+                        for (const child of res.children) game.bloons.push(child);
                     }
                     this.spikesRemaining--;
                     if (this.spikesRemaining <= 0) {
                         this.markedForRemoval = true;
+                        if (this.explodesOnEnd) {
+                            window.soundEngine.playExplosion();
+                            game.spawnExplosionFX(this.x, this.y, 70);
+                            for (let j = game.bloons.length - 1; j >= 0; j--) {
+                                const eb = game.bloons[j];
+                                if (eb.markedForRemoval) continue;
+                                if (Math.hypot(this.x - eb.x, this.y - eb.y) <= 70 + eb.r) {
+                                    const eres = eb.takeDamage(3, 'explosion', this.tower, game.gameMap);
+                                    if (eres.popped) {
+                                        game.addCash(eres.cash);
+                                        game.stats.totalPops += eres.popCount;
+                                        if (this.tower) this.tower.pops += eres.popCount;
+                                        for (const c of eres.children) game.bloons.push(c);
+                                    }
+                                }
+                            }
+                        }
                         break;
                     }
                 }
@@ -356,7 +341,6 @@ class TrackItem {
         } else if (this.type === 'pineapple') {
             this.timer -= dt;
             if (this.timer <= 0) {
-                // Detonate!
                 this.markedForRemoval = true;
                 window.soundEngine.playExplosion();
                 game.spawnExplosionFX(this.x, this.y, 85);
@@ -364,13 +348,11 @@ class TrackItem {
                     const b = game.bloons[i];
                     if (b.markedForRemoval) continue;
                     if (Math.hypot(this.x - b.x, this.y - b.y) <= 85 + b.r) {
-                        const res = b.takeDamage(3, 'explosion', null);
+                        const res = b.takeDamage(3, 'explosion', null, game.gameMap);
                         if (res.popped) {
                             game.addCash(res.cash);
                             game.stats.totalPops += res.popCount;
-                            for (const child of res.children) {
-                                game.bloons.push(child);
-                            }
+                            for (const child of res.children) game.bloons.push(child);
                         }
                     }
                 }
@@ -383,8 +365,6 @@ class TrackItem {
         if (img && img.complete) {
             ctx.drawImage(img, this.x - 16, this.y - 16, 32, 32);
         }
-
-        // Ticking timer for pineapple
         if (this.type === 'pineapple') {
             ctx.fillStyle = '#ff2222';
             ctx.font = 'bold 12px sans-serif';
@@ -399,21 +379,25 @@ class TrackItem {
     }
 }
 
-// Dropped Bananas from Banana Farm
 class DroppedBanana {
-    constructor(x, y, value = 20) {
+    constructor(x, y, value = 20, life = 12.0, autoSalvage = false) {
         this.x = x;
         this.y = y;
         this.value = value;
-        this.life = 12.0; // Despawns after 12s if not collected
+        this.life = life;
+        this.autoSalvage = autoSalvage;
         this.markedForRemoval = false;
-        this.hovered = false;
     }
 
     update(dt, game) {
         this.life -= dt;
         if (this.life <= 0) {
             this.markedForRemoval = true;
+            if (this.autoSalvage && game) {
+                const salvaged = Math.floor(this.value * 0.5);
+                game.addCash(salvaged);
+                game.spawnFloatingText(`+$${salvaged} (Salvage)`, this.x, this.y, '#aaddff');
+            }
         }
     }
 
@@ -433,7 +417,6 @@ class DroppedBanana {
     }
 }
 
-// Particle Pop FX
 class PopParticleFX {
     constructor(x, y) {
         this.x = x;
@@ -441,21 +424,16 @@ class PopParticleFX {
         this.timer = 0.25;
         this.markedForRemoval = false;
     }
-
     update(dt) {
         this.timer -= dt;
         if (this.timer <= 0) this.markedForRemoval = true;
     }
-
     render(ctx) {
         const img = projImageCache.pop_fx;
-        if (img && img.complete) {
-            ctx.drawImage(img, this.x - 18, this.y - 18, 36, 36);
-        }
+        if (img && img.complete) ctx.drawImage(img, this.x - 18, this.y - 18, 36, 36);
     }
 }
 
-// Fireball Explosion FX
 class ExplosionFX {
     constructor(x, y, radius = 45) {
         this.x = x;
@@ -465,17 +443,14 @@ class ExplosionFX {
         this.maxTimer = 0.35;
         this.markedForRemoval = false;
     }
-
     update(dt) {
         this.timer -= dt;
         if (this.timer <= 0) this.markedForRemoval = true;
     }
-
     render(ctx) {
         const progress = 1 - (this.timer / this.maxTimer);
         const currentR = this.radius * (0.6 + progress * 0.4);
         const alpha = Math.max(0, 1 - progress);
-
         ctx.save();
         ctx.globalAlpha = alpha;
         const img = projImageCache.explosion_fx;
@@ -491,30 +466,28 @@ class ExplosionFX {
     }
 }
 
-// Floating Text Feedback (e.g. "+$1", "+$50")
 class FloatingText {
     constructor(text, x, y, color = '#ffd700') {
         this.text = text;
         this.x = x;
         this.y = y;
         this.color = color;
-        this.timer = 0.8;
+        this.timer = 0.9;
         this.markedForRemoval = false;
     }
-
     update(dt) {
-        this.y -= 30 * dt;
+        this.y -= 25 * dt;
         this.timer -= dt;
         if (this.timer <= 0) this.markedForRemoval = true;
     }
-
     render(ctx) {
         ctx.save();
-        ctx.globalAlpha = Math.max(0, this.timer / 0.8);
-        ctx.font = 'bold 13px sans-serif';
+        ctx.globalAlpha = Math.max(0, this.timer / 0.9);
+        ctx.font = 'bold 14px Fredoka, sans-serif';
         ctx.fillStyle = this.color;
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 3;
+        ctx.textAlign = 'center';
         ctx.strokeText(this.text, this.x, this.y);
         ctx.fillText(this.text, this.x, this.y);
         ctx.restore();

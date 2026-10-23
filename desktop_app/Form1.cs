@@ -63,24 +63,18 @@ public partial class Form1 : Form
             string indexPath = Path.Combine(appDir, "index.html");
 
             // If index.html is missing in current folder (e.g. standalone single-file exe moved elsewhere),
-            // extract embedded assets into LocalAppData
+            // always extract embedded assets into LocalAppData so updates take effect immediately
             if (!File.Exists(indexPath) || !Directory.Exists(Path.Combine(appDir, "assets")))
             {
                 string extractedDir = Path.Combine(appDataDir, "GameContent");
                 Directory.CreateDirectory(extractedDir);
-                string extractedIndex = Path.Combine(extractedDir, "index.html");
-
-                // Check if already extracted or needs extract
-                if (!File.Exists(extractedIndex))
-                {
-                    ExtractEmbeddedZip(extractedDir);
-                }
+                ExtractEmbeddedZip(extractedDir);
                 contentDir = extractedDir;
             }
 
             var options = new CoreWebView2EnvironmentOptions
             {
-                AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI"
+                AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required --disable-http-cache --disk-cache-size=1 --disable-features=msWebOOUI,msPdfOOUI"
             };
 
             var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder, options);
@@ -125,8 +119,8 @@ public partial class Form1 : Form
                 }
             };
 
-            // Navigate to virtual host
-            _webView.CoreWebView2.Navigate("https://bloons.game/index.html");
+            // Navigate to virtual host with cache-buster
+            _webView.CoreWebView2.Navigate($"https://bloons.game/index.html?v={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}");
         }
         catch (Exception ex)
         {

@@ -6,9 +6,16 @@
 class SoundEngine {
     constructor() {
         this.ctx = null;
+        this.masterGain = null;
+        this.compressor = null;
+        this.noiseBuffer = null;
         this.soundEnabled = true;
         this.musicEnabled = false;
         this.musicTimer = null;
+        this.musicStep = 0;
+        this.lastPopTime = 0;
+        this.lastDartTime = 0;
+        this.lastExplodeTime = 0;
     }
 
     init() {
@@ -17,6 +24,25 @@ class SoundEngine {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
                 if (AudioCtx) {
                     this.ctx = new AudioCtx();
+                    this.compressor = this.ctx.createDynamicsCompressor();
+                    this.compressor.threshold.setValueAtTime(-16, this.ctx.currentTime);
+                    this.compressor.knee.setValueAtTime(24, this.ctx.currentTime);
+                    this.compressor.ratio.setValueAtTime(8, this.ctx.currentTime);
+                    this.compressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+                    this.compressor.release.setValueAtTime(0.15, this.ctx.currentTime);
+
+                    this.masterGain = this.ctx.createGain();
+                    this.masterGain.gain.setValueAtTime(0.75, this.ctx.currentTime);
+                    this.masterGain.connect(this.compressor);
+                    this.compressor.connect(this.ctx.destination);
+
+                    // Pre-generate 1 second of white noise for realistic pops, explosions, whooshes
+                    const sr = this.ctx.sampleRate;
+                    this.noiseBuffer = this.ctx.createBuffer(1, sr, sr);
+                    const data = this.noiseBuffer.getChannelData(0);
+                    for (let i = 0; i < sr; i++) {
+                        data[i] = Math.random() * 2 - 1;
+                    }
                 }
             }
             if (this.ctx && this.ctx.state === 'suspended') {
@@ -27,43 +53,175 @@ class SoundEngine {
         }
     }
 
+    out() {
+        return this.masterGain || (this.ctx && this.ctx.destination);
+    }
+
     toggleSound() {
         this.soundEnabled = !this.soundEnabled;
         return this.soundEnabled;
+    }
+
+    toggleMusic() {
+        this.init();
+        this.musicEnabled = !this.musicEnabled;
+        if (this.musicEnabled) {
+            this.startMusicLoop();
+        } else {
+            this.stopMusicLoop();
+        }
+        return this.musicEnabled;
+    }
+
+    startMusicLoop() {
+        this.stopMusicLoop();
+        if (!this.ctx) return;
+        // Upbeat classic BTD tropical marimba + bass groove (125 BPM -> 240ms per 8th note)
+        const melody = [
+            523.25, 659.25, 783.99, 659.25, 880.00, 783.99, 659.25, 587.33,
+            523.25, 659.25, 783.99, 1046.50, 987.77, 783.99, 880.00, 783.99,
+            698.46, 880.00, 1046.50, 880.00, 783.99, 659.25, 587.33, 523.25,
+            587.33, 659.25, 698.46, 783.99, 880.00, 783.99, 587.33, 523.25
+        ];
+        const bass = [
+            130.81, 0, 196.00, 0, 220.00, 0, 164.81, 0,
+            130.81, 0, 196.00, 0, 196.00, 0, 146.83, 0,
+            174.61, 0, 220.00, 0, 130.81, 0, 196.00, 0,
+            146.83, 0, 174.61, 0, 196.00, 146.83, 130.81, 0
+        ];
+
+        this.musicTimer = setInterval(() => {
+            if (!this.musicEnabled || !this.ctx || this.ctx.state !== 'running') return;
+            try {
+                const now = this.ctx.currentTime;
+                const step = this.musicStep % melody.length;
+                this.musicStep++;
+
+                // Marimba lead note
+                const mFreq = melody[step];
+                if (mFreq > 0) {
+                    const osc = this.ctx.createOscillator();
+                    const g = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(mFreq, now);
+                    g.gain.setValueAtTime(0.001, now);
+                    g.gain.linearRampToValueAtTime(0.08, now + 0.012);
+                    g.gain.exponentialRampToValueAtTime(0.001, now + 0.20);
+                    osc.connect(g);
+                    g.connect(this.out());
+                    osc.start(now);
+                    osc.stop(now + 0.21);
+                }
+
+                // Warm synth bass
+                const bFreq = bass[step];
+                if (bFreq > 0) {
+                    const bOsc = this.ctx.createOscillator();
+                    const bGain = this.ctx.createGain();
+                    bOsc.type = 'sine';
+                    bOsc.frequency.setValueAtTime(bFreq, now);
+                    bGain.gain.setValueAtTime(0.11, now);
+                    bGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                    bOsc.connect(bGain);
+                    bGain.connect(this.out());
+                    bOsc.start(now);
+                    bOsc.stop(now + 0.36);
+                }
+            } catch (e) {}
+        }, 230);
+    }
+
+    stopMusicLoop() {
+        if (this.musicTimer) {
+            clearInterval(this.musicTimer);
+            this.musicTimer = null;
+        }
     }
 
     playPop(pitchMultiplier = 1.0) {
         if (!this.soundEnabled || !this.ctx) return;
         try {
             const now = this.ctx.currentTime;
+            if (now - this.lastPopTime < 0.022) return; // Prevent ear-piercing overlap during swarms
+            this.lastPopTime = now;
+
+            // 1. Snappy rubber membrane pitch-snap
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
+            const startFreq = (580 + Math.random() * 240) * pitchMultiplier;
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(startFreq, now);
+            osc.frequency.exponentialRampToValueAtTime(110, now + 0.045);
 
-            const baseFreq = (450 + Math.random() * 250) * pitchMultiplier;
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(baseFreq, now);
-            osc.frequency.exponentialRampToValueAtTime(80, now + 0.06);
-
-            const clickOsc = this.ctx.createOscillator();
-            const clickGain = this.ctx.createGain();
-            clickOsc.type = 'sine';
-            clickOsc.frequency.setValueAtTime(1200, now);
-            clickOsc.frequency.exponentialRampToValueAtTime(100, now + 0.015);
-            clickGain.gain.setValueAtTime(0.35, now);
-            clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.015);
-
-            gain.gain.setValueAtTime(0.28, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+            gain.gain.setValueAtTime(0.32, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.048);
 
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            clickOsc.connect(clickGain);
-            clickGain.connect(this.ctx.destination);
-
+            gain.connect(this.out());
             osc.start(now);
-            osc.stop(now + 0.06);
-            clickOsc.start(now);
-            clickOsc.stop(now + 0.015);
+            osc.stop(now + 0.05);
+
+            // 2. Crisp air-burst transient using bandpass-filtered white noise
+            if (this.noiseBuffer) {
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = this.noiseBuffer;
+                const bp = this.ctx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.frequency.setValueAtTime(1900 + Math.random() * 600, now);
+                bp.Q.setValueAtTime(2.5, now);
+
+                const nGain = this.ctx.createGain();
+                nGain.gain.setValueAtTime(0.42, now);
+                nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.028);
+
+                noise.connect(bp);
+                bp.connect(nGain);
+                nGain.connect(this.out());
+                noise.start(now, Math.random() * 0.5, 0.035);
+            }
+        } catch (e) {}
+    }
+
+    playLeadClink() {
+        if (!this.soundEnabled || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            if (now - this.lastPopTime < 0.05) return;
+            this.lastPopTime = now;
+            // Metallic anvil ricochet ping when sharp hits lead
+            for (const freq of [1750, 2680]) {
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now);
+                g.gain.setValueAtTime(0.14, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+                osc.connect(g);
+                g.connect(this.out());
+                osc.start(now);
+                osc.stop(now + 0.095);
+            }
+        } catch (e) {}
+    }
+
+    playCeramicHit() {
+        if (!this.soundEnabled || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            if (now - this.lastPopTime < 0.03) return;
+            this.lastPopTime = now;
+            // Hollow terracotta clay thud
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(340 + Math.random() * 60, now);
+            osc.frequency.exponentialRampToValueAtTime(135, now + 0.055);
+            g.gain.setValueAtTime(0.28, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+            osc.connect(g);
+            g.connect(this.out());
+            osc.start(now);
+            osc.stop(now + 0.065);
         } catch (e) {}
     }
 
@@ -71,44 +229,40 @@ class SoundEngine {
         if (!this.soundEnabled || !this.ctx) return;
         try {
             const now = this.ctx.currentTime;
+            if (now - this.lastExplodeTime < 0.045) return;
+            this.lastExplodeTime = now;
+
+            // Deep sub-bass punch
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(160, now);
-            osc.frequency.exponentialRampToValueAtTime(25, now + 0.35);
-
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(28, now + 0.32);
             gain.gain.setValueAtTime(0.45, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
-
-            const bufferSize = Math.floor(this.ctx.sampleRate * 0.25);
-            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-            const output = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                output[i] = Math.random() * 2 - 1;
-            }
-            const whiteNoise = this.ctx.createBufferSource();
-            whiteNoise.buffer = buffer;
-
-            const filter = this.ctx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(800, now);
-            filter.frequency.linearRampToValueAtTime(150, now + 0.25);
-
-            const noiseGain = this.ctx.createGain();
-            noiseGain.gain.setValueAtTime(0.5, now);
-            noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-
-            whiteNoise.connect(filter);
-            filter.connect(noiseGain);
-            noiseGain.connect(this.ctx.destination);
-
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
-
+            gain.connect(this.out());
             osc.start(now);
             osc.stop(now + 0.35);
-            whiteNoise.start(now);
-            whiteNoise.stop(now + 0.25);
+
+            // Filtered blast roar
+            if (this.noiseBuffer) {
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = this.noiseBuffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1100, now);
+                filter.frequency.exponentialRampToValueAtTime(120, now + 0.28);
+
+                const nGain = this.ctx.createGain();
+                nGain.gain.setValueAtTime(0.48, now);
+                nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+                noise.connect(filter);
+                filter.connect(nGain);
+                nGain.connect(this.out());
+                noise.start(now, 0, 0.3);
+            }
         } catch (e) {}
     }
 
@@ -116,17 +270,51 @@ class SoundEngine {
         if (!this.soundEnabled || !this.ctx) return;
         try {
             const now = this.ctx.currentTime;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(600 + Math.random() * 100, now);
-            osc.frequency.exponentialRampToValueAtTime(200, now + 0.04);
-            gain.gain.setValueAtTime(0.12, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            osc.start(now);
-            osc.stop(now + 0.04);
+            if (now - this.lastDartTime < 0.03) return;
+            this.lastDartTime = now;
+
+            // Soft air whoosh instead of harsh beep
+            if (this.noiseBuffer) {
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = this.noiseBuffer;
+                const bp = this.ctx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.frequency.setValueAtTime(1200, now);
+                bp.frequency.exponentialRampToValueAtTime(450, now + 0.045);
+                bp.Q.setValueAtTime(1.8, now);
+
+                const g = this.ctx.createGain();
+                g.gain.setValueAtTime(0.14, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+                noise.connect(bp);
+                bp.connect(g);
+                g.connect(this.out());
+                noise.start(now, Math.random() * 0.4, 0.05);
+            }
+        } catch (e) {}
+    }
+
+    playSniper() {
+        if (!this.soundEnabled || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            // Crisp high-velocity rifle crack
+            if (this.noiseBuffer) {
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = this.noiseBuffer;
+                const hp = this.ctx.createBiquadFilter();
+                hp.type = 'bandpass';
+                hp.frequency.setValueAtTime(2200, now);
+                hp.frequency.exponentialRampToValueAtTime(400, now + 0.09);
+                const g = this.ctx.createGain();
+                g.gain.setValueAtTime(0.38, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+                noise.connect(hp);
+                hp.connect(g);
+                g.connect(this.out());
+                noise.start(now, 0, 0.1);
+            }
         } catch (e) {}
     }
 
@@ -134,17 +322,19 @@ class SoundEngine {
         if (!this.soundEnabled || !this.ctx) return;
         try {
             const now = this.ctx.currentTime;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(1200, now);
-            osc.frequency.linearRampToValueAtTime(1800, now + 0.08);
-            gain.gain.setValueAtTime(0.2, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            osc.start(now);
-            osc.stop(now + 0.12);
+            // Crystalline ice chime chord
+            [1567.98, 2093.0, 2637.02].forEach((freq, idx) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + idx * 0.018);
+                gain.gain.setValueAtTime(0.11, now + idx * 0.018);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                osc.connect(gain);
+                gain.connect(this.out());
+                osc.start(now + idx * 0.018);
+                osc.stop(now + 0.17);
+            });
         } catch (e) {}
     }
 
@@ -152,15 +342,17 @@ class SoundEngine {
         if (!this.soundEnabled || !this.ctx) return;
         try {
             const now = this.ctx.currentTime;
+            if (now - this.lastDartTime < 0.035) return;
+            this.lastDartTime = now;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(1400, now);
-            osc.frequency.exponentialRampToValueAtTime(250, now + 0.07);
-            gain.gain.setValueAtTime(0.18, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(1450, now);
+            osc.frequency.exponentialRampToValueAtTime(280, now + 0.065);
+            gain.gain.setValueAtTime(0.16, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
+            gain.connect(this.out());
             osc.start(now);
             osc.stop(now + 0.07);
         } catch (e) {}
@@ -170,17 +362,19 @@ class SoundEngine {
         if (!this.soundEnabled || !this.ctx) return;
         try {
             const now = this.ctx.currentTime;
+            if (now - this.lastDartTime < 0.04) return;
+            this.lastDartTime = now;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(320, now);
-            osc.frequency.exponentialRampToValueAtTime(80, now + 0.1);
-            gain.gain.setValueAtTime(0.16, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(520, now);
+            osc.frequency.exponentialRampToValueAtTime(140, now + 0.075);
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
+            gain.connect(this.out());
             osc.start(now);
-            osc.stop(now + 0.1);
+            osc.stop(now + 0.08);
         } catch (e) {}
     }
 
@@ -192,13 +386,13 @@ class SoundEngine {
             const gain = this.ctx.createGain();
             osc.type = 'sine';
             osc.frequency.setValueAtTime(987.77, now);
-            osc.frequency.setValueAtTime(1318.51, now + 0.06);
-            gain.gain.setValueAtTime(0.22, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+            osc.frequency.setValueAtTime(1318.51, now + 0.055);
+            gain.gain.setValueAtTime(0.20, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
+            gain.connect(this.out());
             osc.start(now);
-            osc.stop(now + 0.22);
+            osc.stop(now + 0.23);
         } catch (e) {}
     }
 
@@ -207,17 +401,17 @@ class SoundEngine {
         try {
             const notes = [523.25, 659.25, 783.99, 1046.50];
             notes.forEach((freq, i) => {
-                const now = this.ctx.currentTime + i * 0.06;
+                const now = this.ctx.currentTime + i * 0.055;
                 const osc = this.ctx.createOscillator();
                 const gain = this.ctx.createGain();
                 osc.type = 'triangle';
                 osc.frequency.setValueAtTime(freq, now);
                 gain.gain.setValueAtTime(0.18, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
                 osc.connect(gain);
-                gain.connect(this.ctx.destination);
+                gain.connect(this.out());
                 osc.start(now);
-                osc.stop(now + 0.12);
+                osc.stop(now + 0.15);
             });
         } catch (e) {}
     }
@@ -228,33 +422,35 @@ class SoundEngine {
             const now = this.ctx.currentTime;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(180, now);
-            osc.frequency.exponentialRampToValueAtTime(45, now + 0.08);
-            gain.gain.setValueAtTime(0.25, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(220, now);
+            osc.frequency.exponentialRampToValueAtTime(65, now + 0.075);
+            gain.gain.setValueAtTime(0.28, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
+            gain.connect(this.out());
             osc.start(now);
-            osc.stop(now + 0.08);
+            osc.stop(now + 0.085);
         } catch (e) {}
     }
 
     playRoundStart() {
         if (!this.soundEnabled || !this.ctx) return;
         try {
-            const now = this.ctx.currentTime;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(329.63, now);
-            osc.frequency.setValueAtTime(440, now + 0.09);
-            gain.gain.setValueAtTime(0.22, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            osc.start(now);
-            osc.stop(now + 0.3);
+            const notes = [392.00, 523.25, 659.25];
+            notes.forEach((freq, i) => {
+                const now = this.ctx.currentTime + i * 0.07;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now);
+                gain.gain.setValueAtTime(0.20, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+                osc.connect(gain);
+                gain.connect(this.out());
+                osc.start(now);
+                osc.stop(now + 0.23);
+            });
         } catch (e) {}
     }
 
@@ -266,13 +462,13 @@ class SoundEngine {
             const gain = this.ctx.createGain();
             osc.type = 'sawtooth';
             osc.frequency.setValueAtTime(220, now);
-            osc.frequency.setValueAtTime(140, now + 0.08);
-            gain.gain.setValueAtTime(0.3, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+            osc.frequency.linearRampToValueAtTime(115, now + 0.16);
+            gain.gain.setValueAtTime(0.22, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
+            gain.connect(this.out());
             osc.start(now);
-            osc.stop(now + 0.18);
+            osc.stop(now + 0.19);
         } catch (e) {}
     }
 }
@@ -287,49 +483,54 @@ const MAP_DEFINITIONS = {
         difficulty: 'Beginner',
         image: 'assets/maps/monkey_lane.png',
         waterZones: [
-            { type: 'circle', x: 815, y: 120, r: 75 }
+            { type: 'circle', x: 830, y: 155, r: 88 }
         ],
-        pathWidth: 38,
+        pathWidth: 40,
         waypoints: [
-            { x: -20, y: 267 },
-            { x: 140, y: 267 },
-            { x: 170, y: 255 },
-            { x: 195, y: 205 },
-            { x: 215, y: 155 },
-            { x: 240, y: 117 },
-            { x: 270, y: 107 },
-            { x: 310, y: 109 },
-            { x: 345, y: 130 },
-            { x: 375, y: 175 },
-            { x: 375, y: 210 },
-            { x: 345, y: 255 },
-            { x: 315, y: 300 },
-            { x: 285, y: 355 },
-            { x: 265, y: 410 },
-            { x: 275, y: 445 },
-            { x: 310, y: 455 },
-            { x: 365, y: 420 },
-            { x: 420, y: 410 },
-            { x: 465, y: 390 },
-            { x: 500, y: 310 },
-            { x: 530, y: 210 },
-            { x: 555, y: 155 },
-            { x: 595, y: 128 },
-            { x: 635, y: 128 },
-            { x: 670, y: 150 },
-            { x: 695, y: 195 },
-            { x: 690, y: 245 },
-            { x: 665, y: 290 },
-            { x: 645, y: 350 },
-            { x: 655, y: 410 },
-            { x: 690, y: 442 },
-            { x: 740, y: 445 },
-            { x: 780, y: 435 },
-            { x: 815, y: 380 },
-            { x: 835, y: 325 },
-            { x: 855, y: 280 },
-            { x: 900, y: 270 },
-            { x: 980, y: 270 }
+            { x: -20, y: 268 },
+            { x: 135, y: 268 },
+            { x: 162, y: 262 },
+            { x: 182, y: 240 },
+            { x: 195, y: 200 },
+            { x: 206, y: 155 },
+            { x: 225, y: 122 },
+            { x: 258, y: 106 },
+            { x: 292, y: 105 },
+            { x: 325, y: 118 },
+            { x: 355, y: 148 },
+            { x: 370, y: 185 },
+            { x: 368, y: 222 },
+            { x: 348, y: 262 },
+            { x: 320, y: 305 },
+            { x: 308, y: 345 },
+            { x: 315, y: 385 },
+            { x: 342, y: 415 },
+            { x: 382, y: 428 },
+            { x: 430, y: 422 },
+            { x: 472, y: 400 },
+            { x: 502, y: 360 },
+            { x: 518, y: 305 },
+            { x: 526, y: 240 },
+            { x: 538, y: 180 },
+            { x: 562, y: 145 },
+            { x: 595, y: 126 },
+            { x: 635, y: 126 },
+            { x: 672, y: 142 },
+            { x: 698, y: 178 },
+            { x: 705, y: 220 },
+            { x: 688, y: 265 },
+            { x: 662, y: 315 },
+            { x: 648, y: 360 },
+            { x: 658, y: 405 },
+            { x: 688, y: 435 },
+            { x: 732, y: 445 },
+            { x: 778, y: 432 },
+            { x: 812, y: 395 },
+            { x: 830, y: 345 },
+            { x: 845, y: 300 },
+            { x: 868, y: 275 },
+            { x: 905, y: 268 },
+            { x: 980, y: 268 }
         ]
     },
     desert_oasis: {
@@ -338,48 +539,86 @@ const MAP_DEFINITIONS = {
         difficulty: 'Intermediate',
         image: 'assets/maps/desert_oasis.png',
         waterZones: [
-            { type: 'circle', x: 815, y: 120, r: 65 }
+            { type: 'circle', x: 485, y: 285, r: 95 },
+            { type: 'circle', x: 435, y: 295, r: 72 },
+            { type: 'circle', x: 535, y: 285, r: 72 }
         ],
         pathWidth: 38,
         waypoints: [
-            { x: -20, y: 267 },
-            { x: 140, y: 267 },
-            { x: 170, y: 255 },
-            { x: 195, y: 205 },
-            { x: 215, y: 155 },
-            { x: 240, y: 117 },
-            { x: 270, y: 107 },
-            { x: 310, y: 109 },
-            { x: 345, y: 130 },
-            { x: 375, y: 175 },
-            { x: 375, y: 210 },
-            { x: 345, y: 255 },
-            { x: 315, y: 300 },
-            { x: 305, y: 360 },
-            { x: 325, y: 415 },
-            { x: 360, y: 435 },
-            { x: 400, y: 425 },
-            { x: 435, y: 405 },
-            { x: 470, y: 385 },
-            { x: 500, y: 310 },
-            { x: 530, y: 210 },
-            { x: 555, y: 155 },
-            { x: 595, y: 128 },
-            { x: 635, y: 128 },
-            { x: 670, y: 150 },
-            { x: 695, y: 195 },
-            { x: 690, y: 245 },
-            { x: 665, y: 290 },
-            { x: 645, y: 350 },
-            { x: 655, y: 410 },
-            { x: 690, y: 442 },
-            { x: 740, y: 445 },
-            { x: 780, y: 435 },
-            { x: 815, y: 380 },
-            { x: 835, y: 325 },
-            { x: 855, y: 280 },
-            { x: 900, y: 270 },
-            { x: 980, y: 270 }
+            { x: 62, y: 62 },
+            { x: 100, y: 74 },
+            { x: 150, y: 78 },
+            { x: 195, y: 82 },
+            { x: 232, y: 98 },
+            { x: 255, y: 128 },
+            { x: 260, y: 162 },
+            { x: 242, y: 198 },
+            { x: 215, y: 238 },
+            { x: 218, y: 258 },
+            { x: 258, y: 255 },
+            { x: 305, y: 235 },
+            { x: 345, y: 195 },
+            { x: 378, y: 145 },
+            { x: 415, y: 108 },
+            { x: 458, y: 90 },
+            { x: 508, y: 92 },
+            { x: 555, y: 112 },
+            { x: 600, y: 142 },
+            { x: 645, y: 148 },
+            { x: 702, y: 132 },
+            { x: 755, y: 132 },
+            { x: 802, y: 152 },
+            { x: 832, y: 190 },
+            { x: 838, y: 240 },
+            { x: 818, y: 282 },
+            { x: 778, y: 308 },
+            { x: 735, y: 315 },
+            { x: 695, y: 315 },
+            { x: 665, y: 340 },
+            { x: 632, y: 382 },
+            { x: 592, y: 422 },
+            { x: 548, y: 448 },
+            { x: 502, y: 452 },
+            { x: 455, y: 438 },
+            { x: 412, y: 408 },
+            { x: 378, y: 392 },
+            { x: 345, y: 402 },
+            { x: 308, y: 432 },
+            { x: 262, y: 452 },
+            { x: 215, y: 452 },
+            { x: 168, y: 428 },
+            { x: 135, y: 388 },
+            { x: 122, y: 345 },
+            { x: 128, y: 305 },
+            { x: 155, y: 268 },
+            { x: 185, y: 255 },
+            { x: 218, y: 258 },
+            { x: 258, y: 255 },
+            { x: 305, y: 235 },
+            { x: 345, y: 195 },
+            { x: 378, y: 145 },
+            { x: 415, y: 108 },
+            { x: 458, y: 90 },
+            { x: 508, y: 92 },
+            { x: 555, y: 112 },
+            { x: 600, y: 142 },
+            { x: 645, y: 148 },
+            { x: 702, y: 132 },
+            { x: 755, y: 132 },
+            { x: 802, y: 152 },
+            { x: 832, y: 190 },
+            { x: 838, y: 240 },
+            { x: 818, y: 282 },
+            { x: 778, y: 308 },
+            { x: 735, y: 315 },
+            { x: 702, y: 325 },
+            { x: 698, y: 360 },
+            { x: 708, y: 408 },
+            { x: 732, y: 448 },
+            { x: 772, y: 472 },
+            { x: 830, y: 480 },
+            { x: 910, y: 476 },
+            { x: 980, y: 474 }
         ]
     },
     castle_moat: {
@@ -388,40 +627,42 @@ const MAP_DEFINITIONS = {
         difficulty: 'Advanced',
         image: 'assets/maps/castle_moat.png',
         waterZones: [
-            { type: 'circle', x: 285, y: 130, r: 45 },
-            { type: 'circle', x: 285, y: 410, r: 45 },
-            { type: 'circle', x: 790, y: 130, r: 45 },
-            { type: 'circle', x: 790, y: 410, r: 45 },
-            { type: 'circle', x: 540, y: 25, r: 35 },
-            { type: 'circle', x: 540, y: 515, r: 35 }
+            { type: 'rect', x1: 255, y1: 0, x2: 345, y2: 225 },
+            { type: 'rect', x1: 255, y1: 310, x2: 345, y2: 540 },
+            { type: 'rect', x1: 785, y1: 0, x2: 865, y2: 225 },
+            { type: 'rect', x1: 785, y1: 310, x2: 865, y2: 540 },
+            { type: 'rect', x1: 320, y1: 485, x2: 820, y2: 540 }
         ],
         pathWidth: 36,
         waypoints: [
-            { x: -20, y: 270 },
-            { x: 140, y: 270 },
-            { x: 240, y: 270 },
-            { x: 340, y: 270 },
-            { x: 370, y: 230 },
-            { x: 380, y: 160 },
-            { x: 410, y: 115 },
-            { x: 480, y: 100 },
-            { x: 560, y: 100 },
-            { x: 630, y: 115 },
-            { x: 670, y: 160 },
-            { x: 680, y: 230 },
-            { x: 670, y: 310 },
-            { x: 630, y: 380 },
-            { x: 560, y: 430 },
-            { x: 480, y: 440 },
-            { x: 410, y: 430 },
-            { x: 370, y: 380 },
-            { x: 360, y: 310 },
-            { x: 370, y: 270 },
-            { x: 480, y: 270 },
-            { x: 650, y: 270 },
-            { x: 750, y: 270 },
-            { x: 860, y: 270 },
-            { x: 980, y: 270 }
+            { x: 115, y: 65 },
+            { x: 138, y: 95 },
+            { x: 162, y: 138 },
+            { x: 175, y: 188 },
+            { x: 188, y: 235 },
+            { x: 218, y: 262 },
+            { x: 255, y: 268 },
+            { x: 345, y: 268 },
+            { x: 395, y: 264 },
+            { x: 432, y: 242 },
+            { x: 452, y: 200 },
+            { x: 472, y: 165 },
+            { x: 505, y: 150 },
+            { x: 540, y: 155 },
+            { x: 568, y: 180 },
+            { x: 576, y: 220 },
+            { x: 568, y: 268 },
+            { x: 555, y: 318 },
+            { x: 560, y: 355 },
+            { x: 588, y: 378 },
+            { x: 628, y: 376 },
+            { x: 658, y: 350 },
+            { x: 676, y: 308 },
+            { x: 702, y: 276 },
+            { x: 745, y: 268 },
+            { x: 880, y: 268 },
+            { x: 922, y: 245 },
+            { x: 935, y: 215 }
         ]
     }
 };
@@ -508,6 +749,8 @@ class GameMap {
         for (const zone of this.waterZones) {
             if (zone.type === 'circle') {
                 if (Math.hypot(x - zone.x, y - zone.y) <= zone.r) return true;
+            } else if (zone.type === 'rect') {
+                if (x >= zone.x1 && x <= zone.x2 && y >= zone.y1 && y <= zone.y2) return true;
             }
         }
         return false;
@@ -642,11 +885,24 @@ class Bloon {
         this.glueTimer = 0;
         this.glueSlow = 0.5;
         this.corrosiveRate = 0;
+        this.corrosiveDamage = 1;
+        this.glueSoak = false;
         this.corrosiveTimer = 0;
+        this.burnTimer = 0;
+        this.burnTickTimer = 0;
 
-        this.x = -50;
-        this.y = -50;
-        this.angle = 0;
+        const activeMap = window.game && window.game.gameMap;
+        if (activeMap) {
+            const pos = activeMap.getPointAtDistance(this.distance);
+            this.x = pos.x;
+            this.y = pos.y;
+            this.angle = pos.angle;
+        } else {
+            this.x = -50;
+            this.y = -50;
+            this.angle = 0;
+        }
+
         this.markedForRemoval = false;
         this.escaped = false;
     }
@@ -672,25 +928,60 @@ class Bloon {
         }
     }
 
-    update(dt, gameMap) {
+    update(dt, gameMap, game) {
+        if (this.corrosiveRate > 0) {
+            this.corrosiveTimer += dt;
+            const interval = this.corrosiveDamage > 1 ? 0.8 : 1.4;
+            if (this.corrosiveTimer >= interval) {
+                this.corrosiveTimer = 0;
+                const res = this.takeDamage(this.corrosiveDamage, 'corrosive', null, gameMap);
+                if (res.popped && game) {
+                    game.addCash(res.cash);
+                    game.stats.totalPops += res.popCount;
+                    window.soundEngine.playPop(1.1);
+                    game.spawnPopFX(this.x, this.y);
+                    for (const child of res.children) game.bloons.push(child);
+                }
+                if (this.markedForRemoval) return;
+            }
+        }
+
+        if (this.burnTimer > 0) {
+            this.burnTimer -= dt;
+            this.burnTickTimer += dt;
+            if (this.burnTickTimer >= 1.0) {
+                this.burnTickTimer = 0;
+                const res = this.takeDamage(1, 'fire', null, gameMap);
+                if (res.popped && game) {
+                    game.addCash(res.cash);
+                    game.stats.totalPops += res.popCount;
+                    window.soundEngine.playPop(0.95);
+                    game.spawnPopFX(this.x, this.y);
+                    for (const child of res.children) game.bloons.push(child);
+                }
+                if (this.markedForRemoval) return;
+            }
+        }
+
         if (this.freezeTimer > 0) {
             this.freezeTimer -= dt;
             return;
-        }
-
-        if (this.corrosiveRate > 0) {
-            this.corrosiveTimer += dt;
-            if (this.corrosiveTimer >= 1.0) {
-                this.corrosiveTimer = 0;
-                this.takeDamage(1, 'corrosive', null);
-                if (this.markedForRemoval) return;
-            }
         }
 
         let curSpeed = this.speed * 60;
         if (this.glueTimer > 0) {
             this.glueTimer -= dt;
             curSpeed *= (1 - this.glueSlow);
+        }
+
+        // Check Arctic Wind aura slow from nearby ice towers
+        if (game && !this.isBlimp && !this.def.immune.includes('freeze')) {
+            for (const t of game.towers) {
+                if (t.isArctic && Math.hypot(this.x - t.x, this.y - t.y) <= t.range) {
+                    curSpeed *= 0.4;
+                    break;
+                }
+            }
         }
 
         this.distance += curSpeed * dt;
@@ -707,14 +998,18 @@ class Bloon {
         }
     }
 
-    takeDamage(damage, attackType = 'sharp', tower = null) {
+    takeDamage(damage, attackType = 'sharp', tower = null, gameMap = null) {
         if (this.def.immune.includes(attackType)) {
+            if (this.typeId === 'lead' && attackType === 'sharp') {
+                window.soundEngine.playLeadClink();
+            }
             return { popped: false, children: [], cash: 0, popCount: 0 };
         }
         if (attackType === 'sharp' && this.freezeTimer > 0) {
             return { popped: false, children: [], cash: 0, popCount: 0 };
         }
 
+        const activeMap = gameMap || (window.game && window.game.gameMap);
         let totalCash = 0;
         let pops = 0;
         let spawnedChildren = [];
@@ -733,6 +1028,10 @@ class Bloon {
                         regrow: this.regrow,
                         originalType: cType
                     });
+                    if (activeMap) {
+                        const p = activeMap.getPointAtDistance(child.distance);
+                        child.x = p.x; child.y = p.y; child.angle = p.angle;
+                    }
                     spawnedChildren.push(child);
                 }
                 return { popped: true, children: spawnedChildren, cash: totalCash, popCount: pops };
@@ -754,10 +1053,18 @@ class Bloon {
                         regrow: this.regrow,
                         originalType: this.originalType
                     });
+                    if (this.glueSoak && this.glueTimer > 0) {
+                        child.applyGlue(this.glueTimer, this.glueSlow, this.corrosiveRate > 0, true, this.corrosiveDamage);
+                    }
+                    if (activeMap) {
+                        const p = activeMap.getPointAtDistance(child.distance);
+                        child.x = p.x; child.y = p.y; child.angle = p.angle;
+                    }
                     spawnedChildren.push(child);
                 }
                 return { popped: true, children: spawnedChildren, cash: totalCash, popCount: pops };
             }
+            window.soundEngine.playCeramicHit();
             return { popped: false, children: [], cash: 0, popCount: pops };
         }
 
@@ -794,11 +1101,22 @@ class Bloon {
 
         this.markedForRemoval = true;
         for (const item of currentBloons) {
-            spawnedChildren.push(new Bloon(item.typeId, item.dist, {
+            const child = new Bloon(item.typeId, item.dist, {
                 camo: item.camo,
                 regrow: item.regrow,
                 originalType: item.originalType
-            }));
+            });
+            if (this.glueSoak && this.glueTimer > 0) {
+                child.applyGlue(this.glueTimer, this.glueSlow, this.corrosiveRate > 0, true, this.corrosiveDamage);
+            }
+            if (this.burnTimer > 0) {
+                child.burnTimer = this.burnTimer;
+            }
+            if (activeMap) {
+                const p = activeMap.getPointAtDistance(child.distance);
+                child.x = p.x; child.y = p.y; child.angle = p.angle;
+            }
+            spawnedChildren.push(child);
         }
 
         return { popped: true, children: spawnedChildren, cash: totalCash, popCount: pops };
@@ -809,11 +1127,15 @@ class Bloon {
         this.freezeTimer = Math.max(this.freezeTimer, duration);
     }
 
-    applyGlue(duration, slowRate = 0.5, corrosive = false) {
+    applyGlue(duration, slowRate = 0.5, corrosive = false, soak = false, corrosiveDmg = 1) {
         if (this.isBlimp) return;
         this.glueTimer = Math.max(this.glueTimer, duration);
         this.glueSlow = slowRate;
-        if (corrosive) this.corrosiveRate = 1;
+        if (corrosive) {
+            this.corrosiveRate = 1;
+            this.corrosiveDamage = Math.max(this.corrosiveDamage, corrosiveDmg);
+        }
+        if (soak) this.glueSoak = true;
     }
 
     render(ctx) {
@@ -969,6 +1291,11 @@ class Projectile {
         this.glueDuration = options.glueDuration || 4.0;
         this.glueSlow = options.glueSlow || 0.5;
         this.corrosive = options.corrosive || false;
+        this.glueSoak = options.glueSoak || false;
+        this.corrosiveDamage = options.corrosiveDamage || 1;
+        this.stuns = options.stuns || false;
+        this.burns = options.burns || false;
+        this.decamo = options.decamo || false;
 
         this.rotation = this.angle;
     }
@@ -1050,18 +1377,19 @@ class Projectile {
         }
 
         if (this.glues) {
-            b.applyGlue(this.glueDuration, this.glueSlow, this.corrosive);
+            b.applyGlue(this.glueDuration, this.glueSlow, this.corrosive, this.glueSoak, this.corrosiveDamage);
         }
 
         let effectiveAttack = this.attackType;
         if (this.canPopLead && b.typeId === 'lead') effectiveAttack = 'plasma';
+        if (this.canPopFrozen && b.freezeTimer > 0 && effectiveAttack === 'sharp') effectiveAttack = 'plasma';
 
         let finalDamage = this.damage;
         if (b.isBlimp && this.tower && this.tower.moabDamageMultiplier) {
             finalDamage *= this.tower.moabDamageMultiplier;
         }
 
-        const res = b.takeDamage(finalDamage, effectiveAttack, this.tower);
+        const res = b.takeDamage(finalDamage, effectiveAttack, this.tower, game.gameMap);
         if (res.popped) {
             game.addCash(res.cash);
             game.stats.totalPops += res.popCount;
@@ -1107,15 +1435,19 @@ class Projectile {
         for (let i = game.bloons.length - 1; i >= 0; i--) {
             const b = game.bloons[i];
             if (b.markedForRemoval) continue;
-            if (b.camo && !this.camo) continue;
+            if (b.camo && !this.camo && !this.decamo) continue;
 
             const dist = Math.hypot(this.x - b.x, this.y - b.y);
             if (dist <= this.blastRadius + b.r) {
+                if (this.decamo && b.camo) b.camo = false;
+                if (this.stuns && !b.isBlimp) b.freezeTimer = Math.max(b.freezeTimer, 1.0);
+                if (this.burns) b.burnTimer = Math.max(b.burnTimer, 4.0);
+
                 let finalDamage = this.damage;
                 if (b.isBlimp && this.tower && this.tower.moabDamageMultiplier) {
                     finalDamage *= this.tower.moabDamageMultiplier;
                 }
-                const res = b.takeDamage(finalDamage, 'explosion', this.tower);
+                const res = b.takeDamage(finalDamage, 'explosion', this.tower, game.gameMap);
                 if (res.popped) {
                     game.addCash(res.cash);
                     game.stats.totalPops += res.popCount;
@@ -1172,13 +1504,16 @@ class Projectile {
 }
 
 class TrackItem {
-    constructor(type, x, y) {
+    constructor(type, x, y, options = {}) {
         this.type = type;
         this.x = x;
         this.y = y;
         this.radius = 20;
         this.markedForRemoval = false;
-        if (this.type === 'road_spikes') this.spikesRemaining = 10;
+        this.canPopLead = options.canPopLead || false;
+        this.explodesOnEnd = options.explodesOnEnd || false;
+        this.tower = options.tower || null;
+        if (this.type === 'road_spikes') this.spikesRemaining = options.spikes || 10;
         else if (this.type === 'pineapple') this.timer = 3.0;
     }
 
@@ -1188,10 +1523,12 @@ class TrackItem {
                 const b = game.bloons[i];
                 if (b.markedForRemoval) continue;
                 if (Math.hypot(this.x - b.x, this.y - b.y) <= this.radius + b.r) {
-                    const res = b.takeDamage(1, 'sharp', null);
+                    const atk = (this.canPopLead && b.typeId === 'lead') ? 'plasma' : 'sharp';
+                    const res = b.takeDamage(1, atk, this.tower, game.gameMap);
                     if (res.popped) {
                         game.addCash(res.cash);
                         game.stats.totalPops += res.popCount;
+                        if (this.tower) this.tower.pops += res.popCount;
                         window.soundEngine.playPop();
                         game.spawnPopFX(b.x, b.y);
                         for (const child of res.children) game.bloons.push(child);
@@ -1199,6 +1536,23 @@ class TrackItem {
                     this.spikesRemaining--;
                     if (this.spikesRemaining <= 0) {
                         this.markedForRemoval = true;
+                        if (this.explodesOnEnd) {
+                            window.soundEngine.playExplosion();
+                            game.spawnExplosionFX(this.x, this.y, 70);
+                            for (let j = game.bloons.length - 1; j >= 0; j--) {
+                                const eb = game.bloons[j];
+                                if (eb.markedForRemoval) continue;
+                                if (Math.hypot(this.x - eb.x, this.y - eb.y) <= 70 + eb.r) {
+                                    const eres = eb.takeDamage(3, 'explosion', this.tower, game.gameMap);
+                                    if (eres.popped) {
+                                        game.addCash(eres.cash);
+                                        game.stats.totalPops += eres.popCount;
+                                        if (this.tower) this.tower.pops += eres.popCount;
+                                        for (const c of eres.children) game.bloons.push(c);
+                                    }
+                                }
+                            }
+                        }
                         break;
                     }
                 }
@@ -1213,7 +1567,7 @@ class TrackItem {
                     const b = game.bloons[i];
                     if (b.markedForRemoval) continue;
                     if (Math.hypot(this.x - b.x, this.y - b.y) <= 85 + b.r) {
-                        const res = b.takeDamage(3, 'explosion', null);
+                        const res = b.takeDamage(3, 'explosion', null, game.gameMap);
                         if (res.popped) {
                             game.addCash(res.cash);
                             game.stats.totalPops += res.popCount;
@@ -1245,17 +1599,25 @@ class TrackItem {
 }
 
 class DroppedBanana {
-    constructor(x, y, value = 20) {
+    constructor(x, y, value = 20, life = 12.0, autoSalvage = false) {
         this.x = x;
         this.y = y;
         this.value = value;
-        this.life = 12.0;
+        this.life = life;
+        this.autoSalvage = autoSalvage;
         this.markedForRemoval = false;
     }
 
-    update(dt) {
+    update(dt, game) {
         this.life -= dt;
-        if (this.life <= 0) this.markedForRemoval = true;
+        if (this.life <= 0) {
+            this.markedForRemoval = true;
+            if (this.autoSalvage && game) {
+                const salvaged = Math.floor(this.value * 0.5);
+                game.addCash(salvaged);
+                game.spawnFloatingText(`+$${salvaged} (Salvage)`, this.x, this.y, '#aaddff');
+            }
+        }
     }
 
     collect(game) {
@@ -1702,7 +2064,11 @@ class Tower {
 
         if (this.typeId === 'banana_farm') {
             this.bananasPerRound = 4;
+            this.bananasSpawnedThisRound = 0;
             this.bananaTimer = 0;
+            this.bananaLife = 12.0;
+            this.autoSalvage = false;
+            this.bankBonus = 0;
         }
 
         if (this.typeId === 'spike_factory') {
@@ -1774,14 +2140,15 @@ class Tower {
 
     update(dt, game) {
         if (this.typeId === 'banana_farm') {
-            if (game.roundInProgress) {
+            if (game.roundInProgress && this.bananasSpawnedThisRound < this.bananasPerRound) {
                 this.bananaTimer += dt;
-                const interval = 2.5;
+                const interval = Math.max(0.6, 10.0 / this.bananasPerRound);
                 if (this.bananaTimer >= interval) {
                     this.bananaTimer = 0;
+                    this.bananasSpawnedThisRound++;
                     const ox = (Math.random() - 0.5) * 60;
                     const oy = (Math.random() - 0.5) * 60;
-                    game.droppedBananas.push(new DroppedBanana(this.x + ox, this.y + oy, 25));
+                    game.droppedBananas.push(new DroppedBanana(this.x + ox, this.y + oy, 25, this.bananaLife || 12.0, !!this.autoSalvage));
                 }
             }
             return;
@@ -1791,19 +2158,22 @@ class Tower {
             this.cooldown -= dt;
             if (this.cooldown <= 0 && game.roundInProgress) {
                 this.cooldown = 1.0 / this.fireRate;
-                let bestPt = null;
-                let bestD = this.range;
-                for (let dist = 0; dist < game.gameMap.totalLength; dist += 20) {
+                let candidates = [];
+                for (let dist = 0; dist < game.gameMap.totalLength; dist += 18) {
                     const pt = game.gameMap.getPointAtDistance(dist);
                     const d = Math.hypot(this.x - pt.x, this.y - pt.y);
-                    if (d < bestD) {
-                        bestD = d;
-                        bestPt = pt;
+                    if (d <= this.range) {
+                        candidates.push(pt);
                     }
                 }
-                if (bestPt) {
-                    const item = new TrackItem('road_spikes', bestPt.x, bestPt.y);
-                    item.spikesRemaining = this.spikesPerPile;
+                if (candidates.length > 0) {
+                    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+                    const item = new TrackItem('road_spikes', chosen.x, chosen.y, {
+                        spikes: this.spikesPerPile,
+                        canPopLead: this.canPopLead,
+                        explodesOnEnd: this.explodesOnEnd,
+                        tower: this
+                    });
                     game.trackItems.push(item);
                 }
             }
@@ -1830,7 +2200,8 @@ class Tower {
                             range: this.range,
                             angle: rad,
                             attackType: 'fire',
-                            canPopLead: true
+                            canPopLead: true,
+                            canPopFrozen: true
                         }));
                     }
                 } else {
@@ -1861,17 +2232,22 @@ class Tower {
             if (target && this.cooldown <= 0) {
                 this.cooldown = 1.0 / this.fireRate;
                 window.soundEngine.playFreeze();
-                for (const b of game.bloons) {
+                for (let i = game.bloons.length - 1; i >= 0; i--) {
+                    const b = game.bloons[i];
                     if (b.markedForRemoval) continue;
                     if (b.camo && !this.camoDetect) continue;
                     if (Math.hypot(b.x - this.x, b.y - this.y) <= this.range) {
                         b.applyFreeze(this.freezeDuration);
                         if (this.damage > 0) {
-                            const res = b.takeDamage(this.damage, 'ice', this);
+                            const res = b.takeDamage(this.damage, 'ice', this, game.gameMap);
                             if (res.popped) {
                                 game.addCash(res.cash);
+                                game.stats.totalPops += res.popCount;
                                 this.pops += res.popCount;
-                                for (const c of res.children) game.bloons.push(c);
+                                for (const c of res.children) {
+                                    if (this.deepFreeze) c.applyFreeze(this.freezeDuration);
+                                    game.bloons.push(c);
+                                }
                             }
                         }
                     }
@@ -1897,6 +2273,9 @@ class Tower {
                     attackType: 'explosion',
                     isExplosive: true,
                     blastRadius: this.blastRadius,
+                    stuns: this.stuns,
+                    burns: this.burns,
+                    decamo: this.decamo,
                     camo: true
                 }));
             }
@@ -1917,12 +2296,13 @@ class Tower {
 
     fireAt(target, game) {
         if (this.typeId === 'sniper_monkey') {
-            window.soundEngine.playDart();
+            window.soundEngine.playSniper();
             let effectiveDmg = this.damage;
             if (target.isBlimp) effectiveDmg *= 2;
-            const res = target.takeDamage(effectiveDmg, this.canPopLead ? 'plasma' : 'sharp', this);
+            const res = target.takeDamage(effectiveDmg, this.canPopLead ? 'plasma' : 'sharp', this, game.gameMap);
             if (res.popped) {
                 game.addCash(res.cash);
+                game.stats.totalPops += res.popCount;
                 this.pops += res.popCount;
                 window.soundEngine.playPop();
                 game.spawnPopFX(target.x, target.y);
@@ -1933,18 +2313,23 @@ class Tower {
 
         if (this.typeId === 'dart_monkey') {
             window.soundEngine.playDart();
+            const pType = this.isSpikePult ? 'glaive' : 'dart';
+            const pRadius = this.isSpikePult ? 13 : 8;
             if (this.tripleDart) {
                 for (const offsetAngle of [-0.2, 0, 0.2]) {
                     game.projectiles.push(new Projectile({
                         tower: this,
                         x: this.x,
                         y: this.y,
-                        type: 'dart',
+                        type: pType,
+                        radius: pRadius,
                         damage: this.damage,
                         pierce: this.pierce,
                         speed: 460,
                         range: this.range,
                         angle: this.angle + offsetAngle,
+                        canPopLead: this.isSpikePult,
+                        canPopFrozen: this.isSpikePult,
                         camo: this.camoDetect
                     }));
                 }
@@ -1953,12 +2338,15 @@ class Tower {
                     tower: this,
                     x: this.x,
                     y: this.y,
-                    type: 'dart',
+                    type: pType,
+                    radius: pRadius,
                     damage: this.damage,
                     pierce: this.pierce,
                     speed: 440,
                     range: this.range,
                     angle: this.angle,
+                    canPopLead: this.isSpikePult,
+                    canPopFrozen: this.isSpikePult,
                     camo: this.camoDetect
                 }));
             }
@@ -1980,7 +2368,8 @@ class Tower {
                 isBoomerang: !this.isRicochet,
                 isGlaive: this.isRicochet,
                 canPopLead: this.canPopLead,
-                canPopFrozen: this.canPopFrozen
+                canPopFrozen: this.canPopFrozen,
+                camo: this.camoDetect
             }));
             return;
         }
@@ -2002,7 +2391,8 @@ class Tower {
                 attackType: 'explosion',
                 isExplosive: true,
                 blastRadius: this.blastRadius,
-                cluster: this.cluster
+                cluster: this.cluster,
+                camo: this.camoDetect
             }));
             return;
         }
@@ -2021,73 +2411,79 @@ class Tower {
                 angle: this.angle,
                 glues: true,
                 glueSlow: this.glueSlow,
-                corrosive: this.corrosive
+                corrosive: this.corrosive || this.bloonDissolver,
+                glueSoak: this.glueSoak,
+                corrosiveDamage: this.bloonDissolver ? 3 : 1,
+                camo: this.camoDetect
             }));
             return;
         }
 
         if (this.typeId === 'super_monkey') {
-            if (this.isSunGod) {
-                window.soundEngine.playLaser();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'sun_beam',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 700,
-                    range: this.range,
-                    angle: this.angle,
-                    canPopLead: true,
-                    canPopFrozen: true,
-                    camo: this.camoDetect
-                }));
-            } else if (this.isPlasma) {
-                window.soundEngine.playPlasma();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'plasma_orb',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 600,
-                    range: this.range,
-                    angle: this.angle,
-                    canPopLead: true,
-                    canPopFrozen: true,
-                    camo: this.camoDetect
-                }));
-            } else if (this.isLaser) {
-                window.soundEngine.playLaser();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'laser_beam',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 650,
-                    range: this.range,
-                    angle: this.angle,
-                    canPopFrozen: true,
-                    camo: this.camoDetect
-                }));
-            } else {
-                window.soundEngine.playDart();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'dart',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 550,
-                    range: this.range,
-                    angle: this.angle,
-                    camo: this.camoDetect
-                }));
+            const angles = this.isRobo ? [this.angle - 0.1, this.angle + 0.1] : [this.angle];
+            for (const ang of angles) {
+                if (this.isSunGod) {
+                    window.soundEngine.playLaser();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'sun_beam',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 700,
+                        range: this.range,
+                        angle: ang,
+                        canPopLead: true,
+                        canPopFrozen: true,
+                        camo: this.camoDetect
+                    }));
+                } else if (this.isPlasma) {
+                    window.soundEngine.playPlasma();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'plasma_orb',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 600,
+                        range: this.range,
+                        angle: ang,
+                        canPopLead: true,
+                        canPopFrozen: true,
+                        camo: this.camoDetect
+                    }));
+                } else if (this.isLaser) {
+                    window.soundEngine.playLaser();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'laser_beam',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 650,
+                        range: this.range,
+                        angle: ang,
+                        canPopFrozen: true,
+                        camo: this.camoDetect
+                    }));
+                } else {
+                    window.soundEngine.playDart();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'dart',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 550,
+                        range: this.range,
+                        angle: ang,
+                        camo: this.camoDetect
+                    }));
+                }
             }
             return;
         }
@@ -2106,6 +2502,25 @@ class Tower {
                 angle: this.angle,
                 camo: this.camoDetect
             }));
+            if (this.hasCannon) {
+                game.projectiles.push(new Projectile({
+                    tower: this,
+                    x: this.x,
+                    y: this.y,
+                    targetX: target.x,
+                    targetY: target.y,
+                    type: 'bomb',
+                    damage: this.damage,
+                    pierce: 15,
+                    speed: 380,
+                    range: this.range * 1.15,
+                    angle: this.angle,
+                    attackType: 'explosion',
+                    isExplosive: true,
+                    blastRadius: 45,
+                    camo: this.camoDetect
+                }));
+            }
             if (this.grapeShot) {
                 for (const g of [-0.3, -0.15, 0.15, 0.3]) {
                     game.projectiles.push(new Projectile({
@@ -2117,7 +2532,8 @@ class Tower {
                         pierce: 1,
                         speed: 420,
                         range: this.range * 0.8,
-                        angle: this.angle + g
+                        angle: this.angle + g,
+                        camo: this.camoDetect
                     }));
                 }
             }
@@ -2126,6 +2542,19 @@ class Tower {
     }
 
     render(ctx, isSelected = false) {
+        if (this.isArctic) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(135, 206, 250, 0.14)';
+            ctx.strokeStyle = 'rgba(173, 216, 230, 0.45)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.range + 20, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if (isSelected) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -2143,7 +2572,7 @@ class Tower {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        const rotatableTowers = ['dart_monkey', 'bomb_tower', 'sniper_monkey', 'super_monkey', 'glue_gunner', 'boomerang_monkey'];
+        const rotatableTowers = ['dart_monkey', 'bomb_tower', 'sniper_monkey', 'super_monkey', 'glue_gunner', 'boomerang_monkey', 'monkey_buccaneer'];
         if (rotatableTowers.includes(this.typeId)) {
             ctx.rotate(this.angle);
         }
@@ -2410,6 +2839,12 @@ class BTD4Game {
         window.soundEngine.init();
         window.soundEngine.playRoundStart();
         this.roundInProgress = true;
+        for (const t of this.towers) {
+            if (t.typeId === 'banana_farm') {
+                t.bananasSpawnedThisRound = 0;
+                t.cooldown = 1.5;
+            }
+        }
         this.spawner.startRound(this.round);
         this.updateUI();
     }
@@ -2418,9 +2853,17 @@ class BTD4Game {
         this.roundInProgress = false;
         window.soundEngine.playCoin();
 
-        const roundReward = 100 + this.round;
+        let bankTotal = 0;
+        for (const t of this.towers) {
+            if (t.typeId === 'banana_farm' && t.bankBonus > 0) {
+                bankTotal += t.bankBonus;
+                this.spawnFloatingText(`+$${t.bankBonus} Bank`, t.x, t.y - 18, '#ffd700');
+            }
+        }
+
+        const roundReward = 100 + this.round + bankTotal;
         this.addCash(roundReward);
-        this.spawnFloatingText(`Round Complete! +$${roundReward}`, this.width / 2, 80, '#32cd32');
+        this.spawnFloatingText(`Round Complete! +$${100 + this.round}`, this.width / 2, 80, '#32cd32');
 
         if (this.round === 50 && !this.victory) {
             this.triggerVictory();
@@ -2585,15 +3028,7 @@ class BTD4Game {
             }
         }
 
-        // 3. Mortar target reticle repositioning
-        if (this.selectedTower && this.selectedTower.typeId === 'mortar_monkey') {
-            this.selectedTower.reticleX = x;
-            this.selectedTower.reticleY = y;
-            window.soundEngine.playDart();
-            return;
-        }
-
-        // 4. Select tower under click
+        // 3. Select tower under click (checked before Mortar reticle so players can click other towers)
         let clickedTower = null;
         for (const t of this.towers) {
             if (Math.hypot(x - t.x, y - t.y) <= t.radius + 8) {
@@ -2601,8 +3036,21 @@ class BTD4Game {
                 break;
             }
         }
+        if (clickedTower) {
+            this.selectedTower = clickedTower;
+            this.updateUI();
+            return;
+        }
 
-        this.selectedTower = clickedTower;
+        // 4. Mortar target reticle repositioning when clicking non-tower space
+        if (this.selectedTower && this.selectedTower.typeId === 'mortar_monkey') {
+            this.selectedTower.reticleX = x;
+            this.selectedTower.reticleY = y;
+            window.soundEngine.playDart();
+            return;
+        }
+
+        this.selectedTower = null;
         this.updateUI();
     }
 
@@ -2649,7 +3097,7 @@ class BTD4Game {
 
         for (let i = this.bloons.length - 1; i >= 0; i--) {
             const b = this.bloons[i];
-            b.update(dt, this.gameMap);
+            b.update(dt, this.gameMap, this);
             if (b.escaped) {
                 let livesLost = b.def.tier;
                 if (b.isBlimp) livesLost = (b.typeId === 'moab' ? 40 : 100);
@@ -2784,6 +3232,15 @@ class BTD4Game {
             const on = window.soundEngine.toggleSound();
             document.getElementById('soundIcon').src = on ? 'assets/ui/sound_on.png' : 'assets/ui/sound_off.png';
         });
+
+        const btnMusic = document.getElementById('btnMusic');
+        if (btnMusic) {
+            btnMusic.addEventListener('click', () => {
+                const musicOn = window.soundEngine.toggleMusic();
+                btnMusic.textContent = musicOn ? 'MUSIC: ON' : 'MUSIC: OFF';
+                btnMusic.className = musicOn ? 'ctrl-btn active' : 'ctrl-btn';
+            });
+        }
 
         document.getElementById('btnUpgrade1').addEventListener('click', () => {
             if (this.selectedTower) {

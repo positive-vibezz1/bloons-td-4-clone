@@ -1,5 +1,4 @@
-// Maps registry and path mathematics for Bloons TD 4 Clone
-
+// --- 2. Maps & Path Math ---
 const MAP_DEFINITIONS = {
     monkey_lane: {
         id: 'monkey_lane',
@@ -7,49 +6,54 @@ const MAP_DEFINITIONS = {
         difficulty: 'Beginner',
         image: 'assets/maps/monkey_lane.png',
         waterZones: [
-            { type: 'circle', x: 815, y: 120, r: 75 }
+            { type: 'circle', x: 830, y: 155, r: 88 }
         ],
-        pathWidth: 38,
+        pathWidth: 40,
         waypoints: [
-            { x: -20, y: 267 },
-            { x: 140, y: 267 },
-            { x: 170, y: 255 },
-            { x: 195, y: 205 },
-            { x: 215, y: 155 },
-            { x: 240, y: 117 },
-            { x: 270, y: 107 },
-            { x: 310, y: 109 },
-            { x: 345, y: 130 },
-            { x: 375, y: 175 },
-            { x: 375, y: 210 },
-            { x: 345, y: 255 },
-            { x: 315, y: 300 },
-            { x: 285, y: 355 },
-            { x: 265, y: 410 },
-            { x: 275, y: 445 },
-            { x: 310, y: 455 },
-            { x: 365, y: 420 },
-            { x: 420, y: 410 },
-            { x: 465, y: 390 },
-            { x: 500, y: 310 },
-            { x: 530, y: 210 },
-            { x: 555, y: 155 },
-            { x: 595, y: 128 },
-            { x: 635, y: 128 },
-            { x: 670, y: 150 },
-            { x: 695, y: 195 },
-            { x: 690, y: 245 },
-            { x: 665, y: 290 },
-            { x: 645, y: 350 },
-            { x: 655, y: 410 },
-            { x: 690, y: 442 },
-            { x: 740, y: 445 },
-            { x: 780, y: 435 },
-            { x: 815, y: 380 },
-            { x: 835, y: 325 },
-            { x: 855, y: 280 },
-            { x: 900, y: 270 },
-            { x: 980, y: 270 }
+            { x: -20, y: 268 },
+            { x: 135, y: 268 },
+            { x: 162, y: 262 },
+            { x: 182, y: 240 },
+            { x: 195, y: 200 },
+            { x: 206, y: 155 },
+            { x: 225, y: 122 },
+            { x: 258, y: 106 },
+            { x: 292, y: 105 },
+            { x: 325, y: 118 },
+            { x: 355, y: 148 },
+            { x: 370, y: 185 },
+            { x: 368, y: 222 },
+            { x: 348, y: 262 },
+            { x: 320, y: 305 },
+            { x: 308, y: 345 },
+            { x: 315, y: 385 },
+            { x: 342, y: 415 },
+            { x: 382, y: 428 },
+            { x: 430, y: 422 },
+            { x: 472, y: 400 },
+            { x: 502, y: 360 },
+            { x: 518, y: 305 },
+            { x: 526, y: 240 },
+            { x: 538, y: 180 },
+            { x: 562, y: 145 },
+            { x: 595, y: 126 },
+            { x: 635, y: 126 },
+            { x: 672, y: 142 },
+            { x: 698, y: 178 },
+            { x: 705, y: 220 },
+            { x: 688, y: 265 },
+            { x: 662, y: 315 },
+            { x: 648, y: 360 },
+            { x: 658, y: 405 },
+            { x: 688, y: 435 },
+            { x: 732, y: 445 },
+            { x: 778, y: 432 },
+            { x: 812, y: 395 },
+            { x: 830, y: 345 },
+            { x: 845, y: 300 },
+            { x: 868, y: 275 },
+            { x: 905, y: 268 },
+            { x: 980, y: 268 }
         ]
     },
     desert_oasis: {
@@ -58,48 +62,86 @@ const MAP_DEFINITIONS = {
         difficulty: 'Intermediate',
         image: 'assets/maps/desert_oasis.png',
         waterZones: [
-            { type: 'circle', x: 815, y: 120, r: 65 }
+            { type: 'circle', x: 485, y: 285, r: 95 },
+            { type: 'circle', x: 435, y: 295, r: 72 },
+            { type: 'circle', x: 535, y: 285, r: 72 }
         ],
         pathWidth: 38,
         waypoints: [
-            { x: -20, y: 267 },
-            { x: 140, y: 267 },
-            { x: 170, y: 255 },
-            { x: 195, y: 205 },
-            { x: 215, y: 155 },
-            { x: 240, y: 117 },
-            { x: 270, y: 107 },
-            { x: 310, y: 109 },
-            { x: 345, y: 130 },
-            { x: 375, y: 175 },
-            { x: 375, y: 210 },
-            { x: 345, y: 255 },
-            { x: 315, y: 300 },
-            { x: 305, y: 360 },
-            { x: 325, y: 415 },
-            { x: 360, y: 435 },
-            { x: 400, y: 425 },
-            { x: 435, y: 405 },
-            { x: 470, y: 385 },
-            { x: 500, y: 310 },
-            { x: 530, y: 210 },
-            { x: 555, y: 155 },
-            { x: 595, y: 128 },
-            { x: 635, y: 128 },
-            { x: 670, y: 150 },
-            { x: 695, y: 195 },
-            { x: 690, y: 245 },
-            { x: 665, y: 290 },
-            { x: 645, y: 350 },
-            { x: 655, y: 410 },
-            { x: 690, y: 442 },
-            { x: 740, y: 445 },
-            { x: 780, y: 435 },
-            { x: 815, y: 380 },
-            { x: 835, y: 325 },
-            { x: 855, y: 280 },
-            { x: 900, y: 270 },
-            { x: 980, y: 270 }
+            { x: 62, y: 62 },
+            { x: 100, y: 74 },
+            { x: 150, y: 78 },
+            { x: 195, y: 82 },
+            { x: 232, y: 98 },
+            { x: 255, y: 128 },
+            { x: 260, y: 162 },
+            { x: 242, y: 198 },
+            { x: 215, y: 238 },
+            { x: 218, y: 258 },
+            { x: 258, y: 255 },
+            { x: 305, y: 235 },
+            { x: 345, y: 195 },
+            { x: 378, y: 145 },
+            { x: 415, y: 108 },
+            { x: 458, y: 90 },
+            { x: 508, y: 92 },
+            { x: 555, y: 112 },
+            { x: 600, y: 142 },
+            { x: 645, y: 148 },
+            { x: 702, y: 132 },
+            { x: 755, y: 132 },
+            { x: 802, y: 152 },
+            { x: 832, y: 190 },
+            { x: 838, y: 240 },
+            { x: 818, y: 282 },
+            { x: 778, y: 308 },
+            { x: 735, y: 315 },
+            { x: 695, y: 315 },
+            { x: 665, y: 340 },
+            { x: 632, y: 382 },
+            { x: 592, y: 422 },
+            { x: 548, y: 448 },
+            { x: 502, y: 452 },
+            { x: 455, y: 438 },
+            { x: 412, y: 408 },
+            { x: 378, y: 392 },
+            { x: 345, y: 402 },
+            { x: 308, y: 432 },
+            { x: 262, y: 452 },
+            { x: 215, y: 452 },
+            { x: 168, y: 428 },
+            { x: 135, y: 388 },
+            { x: 122, y: 345 },
+            { x: 128, y: 305 },
+            { x: 155, y: 268 },
+            { x: 185, y: 255 },
+            { x: 218, y: 258 },
+            { x: 258, y: 255 },
+            { x: 305, y: 235 },
+            { x: 345, y: 195 },
+            { x: 378, y: 145 },
+            { x: 415, y: 108 },
+            { x: 458, y: 90 },
+            { x: 508, y: 92 },
+            { x: 555, y: 112 },
+            { x: 600, y: 142 },
+            { x: 645, y: 148 },
+            { x: 702, y: 132 },
+            { x: 755, y: 132 },
+            { x: 802, y: 152 },
+            { x: 832, y: 190 },
+            { x: 838, y: 240 },
+            { x: 818, y: 282 },
+            { x: 778, y: 308 },
+            { x: 735, y: 315 },
+            { x: 702, y: 325 },
+            { x: 698, y: 360 },
+            { x: 708, y: 408 },
+            { x: 732, y: 448 },
+            { x: 772, y: 472 },
+            { x: 830, y: 480 },
+            { x: 910, y: 476 },
+            { x: 980, y: 474 }
         ]
     },
     castle_moat: {
@@ -108,40 +150,42 @@ const MAP_DEFINITIONS = {
         difficulty: 'Advanced',
         image: 'assets/maps/castle_moat.png',
         waterZones: [
-            { type: 'circle', x: 285, y: 130, r: 45 },
-            { type: 'circle', x: 285, y: 410, r: 45 },
-            { type: 'circle', x: 790, y: 130, r: 45 },
-            { type: 'circle', x: 790, y: 410, r: 45 },
-            { type: 'circle', x: 540, y: 25, r: 35 },
-            { type: 'circle', x: 540, y: 515, r: 35 }
+            { type: 'rect', x1: 255, y1: 0, x2: 345, y2: 225 },
+            { type: 'rect', x1: 255, y1: 310, x2: 345, y2: 540 },
+            { type: 'rect', x1: 785, y1: 0, x2: 865, y2: 225 },
+            { type: 'rect', x1: 785, y1: 310, x2: 865, y2: 540 },
+            { type: 'rect', x1: 320, y1: 485, x2: 820, y2: 540 }
         ],
         pathWidth: 36,
         waypoints: [
-            { x: -20, y: 270 },
-            { x: 140, y: 270 },
-            { x: 240, y: 270 },
-            { x: 340, y: 270 },
-            { x: 370, y: 230 },
-            { x: 380, y: 160 },
-            { x: 410, y: 115 },
-            { x: 480, y: 100 },
-            { x: 560, y: 100 },
-            { x: 630, y: 115 },
-            { x: 670, y: 160 },
-            { x: 680, y: 230 },
-            { x: 670, y: 310 },
-            { x: 630, y: 380 },
-            { x: 560, y: 430 },
-            { x: 480, y: 440 },
-            { x: 410, y: 430 },
-            { x: 370, y: 380 },
-            { x: 360, y: 310 },
-            { x: 370, y: 270 },
-            { x: 480, y: 270 },
-            { x: 650, y: 270 },
-            { x: 750, y: 270 },
-            { x: 860, y: 270 },
-            { x: 980, y: 270 }
+            { x: 115, y: 65 },
+            { x: 138, y: 95 },
+            { x: 162, y: 138 },
+            { x: 175, y: 188 },
+            { x: 188, y: 235 },
+            { x: 218, y: 262 },
+            { x: 255, y: 268 },
+            { x: 345, y: 268 },
+            { x: 395, y: 264 },
+            { x: 432, y: 242 },
+            { x: 452, y: 200 },
+            { x: 472, y: 165 },
+            { x: 505, y: 150 },
+            { x: 540, y: 155 },
+            { x: 568, y: 180 },
+            { x: 576, y: 220 },
+            { x: 568, y: 268 },
+            { x: 555, y: 318 },
+            { x: 560, y: 355 },
+            { x: 588, y: 378 },
+            { x: 628, y: 376 },
+            { x: 658, y: 350 },
+            { x: 676, y: 308 },
+            { x: 702, y: 276 },
+            { x: 745, y: 268 },
+            { x: 880, y: 268 },
+            { x: 922, y: 245 },
+            { x: 935, y: 215 }
         ]
     }
 };
@@ -153,10 +197,9 @@ class GameMap {
         this.difficulty = def.difficulty;
         this.imageSrc = def.image;
         this.waterZones = def.waterZones || [];
-        this.pathWidth = def.pathWidth || 40;
+        this.pathWidth = def.pathWidth || 38;
         this.waypoints = def.waypoints;
 
-        // Precompute path segments and total distance
         this.segments = [];
         this.totalLength = 0;
         for (let i = 0; i < this.waypoints.length - 1; i++) {
@@ -180,7 +223,6 @@ class GameMap {
         this.bgImage.onload = () => { this.isLoaded = true; };
     }
 
-    // Get position and angle along path at specified distance
     getPointAtDistance(dist) {
         if (dist <= 0) {
             const seg = this.segments[0];
@@ -191,7 +233,6 @@ class GameMap {
             return { x: last.p2.x, y: last.p2.y, angle: last.angle, finished: true };
         }
 
-        // Find corresponding segment
         for (let i = 0; i < this.segments.length; i++) {
             const seg = this.segments[i];
             if (dist >= seg.startDist && dist <= seg.endDist) {
@@ -208,7 +249,6 @@ class GameMap {
         return { x: 0, y: 0, angle: 0, finished: true };
     }
 
-    // Distance from point to a line segment
     distToSegment(px, py, x1, y1, x2, y2) {
         const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
         if (l2 === 0) return Math.hypot(px - x1, py - y1);
@@ -219,7 +259,6 @@ class GameMap {
         return Math.hypot(px - projX, py - projY);
     }
 
-    // Check if point is on or too close to track
     isOnTrack(x, y, margin = 0) {
         const threshold = (this.pathWidth / 2) + margin;
         for (const seg of this.segments) {
@@ -229,53 +268,58 @@ class GameMap {
         return false;
     }
 
-    // Check if point is inside water body
     isInWater(x, y) {
         for (const zone of this.waterZones) {
             if (zone.type === 'circle') {
                 if (Math.hypot(x - zone.x, y - zone.y) <= zone.r) return true;
+            } else if (zone.type === 'rect') {
+                if (x >= zone.x1 && x <= zone.x2 && y >= zone.y1 && y <= zone.y2) return true;
             }
         }
         return false;
     }
 
-    // Check if tower placement is valid
-    canPlaceTower(x, y, radius, isWaterTower = false, isTrackItem = false) {
-        // Outside map boundaries
-        if (x < radius || x > 960 - radius || y < radius || y > 540 - radius) {
-            return false;
+    // Player-friendly forgiving collision check
+    canPlaceTower(x, y, radius = 20, isWaterTower = false, isTrackItem = false) {
+        if (x < 15 || x > 945 || y < 15 || y > 525) {
+            return { valid: false, reason: "Outside play area" };
         }
 
-        // Road items (Road Spikes, Pineapple) MUST be placed on the track!
         if (isTrackItem) {
-            return this.isOnTrack(x, y, -5);
+            if (this.isOnTrack(x, y, 6)) {
+                return { valid: true };
+            }
+            return { valid: false, reason: "Must be placed on track!" };
         }
 
-        // Water tower (e.g. Buccaneer) MUST be placed in water
         if (isWaterTower) {
-            return this.isInWater(x, y) && !this.isOnTrack(x, y, radius * 0.5);
+            if (!this.isInWater(x, y)) {
+                return { valid: false, reason: "Must be placed in water!" };
+            }
+            if (this.isOnTrack(x, y, 0)) {
+                return { valid: false, reason: "Cannot block track!" };
+            }
+            return { valid: true };
         }
 
-        // Standard land towers cannot be placed on track or in water
-        if (this.isOnTrack(x, y, radius * 0.75)) {
-            return false;
+        // Standard land towers: allow placement right along path edge
+        if (this.isOnTrack(x, y, -2)) {
+            return { valid: false, reason: "Cannot place on track!" };
         }
         if (this.isInWater(x, y)) {
-            return false;
+            return { valid: false, reason: "Cannot place in water!" };
         }
 
-        return true;
+        return { valid: true };
     }
 
     render(ctx) {
         if (this.isLoaded && this.bgImage.complete) {
             ctx.drawImage(this.bgImage, 0, 0, 960, 540);
         } else {
-            // High fidelity fallback renderer
             ctx.fillStyle = '#62a832';
             ctx.fillRect(0, 0, 960, 540);
 
-            // Draw track path
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.strokeStyle = '#cda365';
@@ -287,7 +331,6 @@ class GameMap {
             }
             ctx.stroke();
 
-            // Draw water
             for (const zone of this.waterZones) {
                 ctx.fillStyle = 'rgba(64, 165, 230, 0.8)';
                 ctx.beginPath();

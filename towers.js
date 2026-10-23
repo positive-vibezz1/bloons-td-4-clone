@@ -1,5 +1,4 @@
-// Towers definition, upgrade trees, targeting, and combat logic
-
+// --- 5. Towers System ---
 const TOWER_SPRITES = {
     dart_monkey: 'assets/towers/dart_monkey.png',
     dart_monkey_throw: 'assets/towers/dart_monkey_throw.png',
@@ -43,11 +42,11 @@ const TOWER_DEFINITIONS = {
         damage: 1,
         attackType: 'sharp',
         sprite: 'dart_monkey',
-        desc: 'Throws a single sharp dart at bloons. Reliable and cheap.',
+        desc: 'Throws sharp darts at bloons. Cheap & reliable.',
         upgrades1: [
             { name: 'Long Range', cost: 90, desc: '+25% range.', apply: t => { t.range *= 1.25; } },
             { name: 'Enhanced Eyesight', cost: 120, desc: 'Enables Camo Bloon detection.', apply: t => { t.camoDetect = true; t.range += 15; } },
-            { name: 'Spike-o-Pult', cost: 500, desc: 'Flings heavy spiked balls that plow through 18 bloons!', apply: t => { t.isSpikePult = true; t.pierce = 18; t.damage = 2; t.range += 20; } }
+            { name: 'Spike-o-Pult', cost: 500, desc: 'Flings heavy spiked iron balls that plow through 18 bloons!', apply: t => { t.isSpikePult = true; t.pierce = 18; t.damage = 2; t.range += 20; } }
         ],
         upgrades2: [
             { name: 'Sharp Darts', cost: 140, desc: 'Darts pop 2 bloons each.', apply: t => { t.pierce += 1; } },
@@ -65,7 +64,7 @@ const TOWER_DEFINITIONS = {
         damage: 1,
         attackType: 'sharp',
         sprite: 'tack_shooter',
-        desc: 'Shoots a burst of 8 tacks in all directions. Best placed in curves.',
+        desc: 'Shoots 8 tacks in all directions. Devastating in loops.',
         upgrades1: [
             { name: 'Faster Shooting', cost: 100, desc: '+30% attack speed.', apply: t => { t.fireRate *= 1.3; } },
             { name: 'Super Fast', cost: 150, desc: '+50% attack speed.', apply: t => { t.fireRate *= 1.5; } },
@@ -81,13 +80,13 @@ const TOWER_DEFINITIONS = {
         id: 'sniper_monkey',
         name: 'Sniper Monkey',
         cost: 350,
-        range: 1200, // Infinite range
+        range: 1200,
         fireRate: 0.5,
         pierce: 1,
         damage: 2,
         attackType: 'sharp',
         sprite: 'sniper_monkey',
-        desc: 'Infinite range rifle. Snipes bloons anywhere on the map.',
+        desc: 'Infinite range rifle. Instantly snipes bloons anywhere on the map.',
         upgrades1: [
             { name: 'Full Metal Jacket', cost: 300, desc: 'Pops Lead bloons and pops 4 layers in 1 shot!', apply: t => { t.damage = 4; t.canPopLead = true; } },
             { name: 'Point Five Oh', cost: 750, desc: 'Heavy high-caliber round pops 7 layers.', apply: t => { t.damage = 7; } },
@@ -192,7 +191,7 @@ const TOWER_DEFINITIONS = {
         name: 'Super Monkey',
         cost: 3200,
         range: 140,
-        fireRate: 8.0, // Hyper fast
+        fireRate: 8.0,
         pierce: 1,
         damage: 1,
         attackType: 'sharp',
@@ -213,13 +212,13 @@ const TOWER_DEFINITIONS = {
         id: 'mortar_monkey',
         name: 'Mortar Monkey',
         cost: 750,
-        range: 1200, // Infinite range
+        range: 1200,
         fireRate: 0.45,
         pierce: 40,
         damage: 2,
         attackType: 'explosion',
         sprite: 'mortar_monkey',
-        desc: 'Artillery mortar tube. Click anywhere to reposition its target reticle!',
+        desc: 'Artillery mortar tube. Click anywhere on the map to set its target reticle!',
         upgrades1: [
             { name: 'Bigger Blast', cost: 300, desc: '+50% explosion blast radius.', apply: t => { t.blastRadius = 65; } },
             { name: 'The Big One', cost: 6000, desc: 'Massive nuclear-scale high explosive shell pops 5 layers!', apply: t => { t.blastRadius = 110; t.damage = 5; } },
@@ -305,7 +304,7 @@ class Tower {
         this.name = this.def.name;
         this.x = x;
         this.y = y;
-        this.radius = 22;
+        this.radius = 20;
         this.range = this.def.range;
         this.fireRate = this.def.fireRate;
         this.pierce = this.def.pierce;
@@ -318,17 +317,15 @@ class Tower {
         this.angle = 0;
         this.cooldown = 0;
         this.pops = 0;
-        this.targetPriority = 'first'; // 'first', 'last', 'close', 'strong'
+        this.targetPriority = 'first';
         this.camoDetect = false;
         this.canPopLead = false;
         this.canPopFrozen = false;
         this.blastRadius = 45;
 
-        // Upgrade levels
         this.tierPath1 = 0;
         this.tierPath2 = 0;
 
-        // Specialized fields
         this.isSpikePult = false;
         this.tripleDart = false;
         this.isBlade = false;
@@ -345,28 +342,27 @@ class Tower {
         this.isPlasma = false;
         this.isSunGod = false;
 
-        // Mortar reticle
         if (this.typeId === 'mortar_monkey') {
             this.reticleX = 480;
             this.reticleY = 270;
         }
 
-        // Banana farm
         if (this.typeId === 'banana_farm') {
             this.bananasPerRound = 4;
+            this.bananasSpawnedThisRound = 0;
             this.bananaTimer = 0;
+            this.bananaLife = 12.0;
+            this.autoSalvage = false;
+            this.bankBonus = 0;
         }
 
-        // Spike factory
         if (this.typeId === 'spike_factory') {
             this.spikesPerPile = 5;
         }
     }
 
-    // Buy upgrade
     upgrade(path) {
         if (path === 1 && this.tierPath1 < 3) {
-            // Restriction: max 3 on one path, max 2 on other
             if (this.tierPath1 === 2 && this.tierPath2 > 2) return false;
             const up = this.def.upgrades1[this.tierPath1];
             up.apply(this);
@@ -396,12 +392,10 @@ class Tower {
         return null;
     }
 
-    // Sell value (80% of total invested)
     getSellValue() {
         return Math.floor(this.investedCash * 0.8);
     }
 
-    // Find target bloon according to priority
     findTarget(game) {
         let candidates = [];
         for (const b of game.bloons) {
@@ -430,47 +424,47 @@ class Tower {
     }
 
     update(dt, game) {
-        // Banana Farm: drops bananas periodically
         if (this.typeId === 'banana_farm') {
-            if (game.roundInProgress) {
+            if (game.roundInProgress && this.bananasSpawnedThisRound < this.bananasPerRound) {
                 this.bananaTimer += dt;
-                const interval = 2.5;
+                const interval = Math.max(0.6, 10.0 / this.bananasPerRound);
                 if (this.bananaTimer >= interval) {
                     this.bananaTimer = 0;
+                    this.bananasSpawnedThisRound++;
                     const ox = (Math.random() - 0.5) * 60;
                     const oy = (Math.random() - 0.5) * 60;
-                    game.droppedBananas.push(new DroppedBanana(this.x + ox, this.y + oy, 25));
+                    game.droppedBananas.push(new DroppedBanana(this.x + ox, this.y + oy, 25, this.bananaLife || 12.0, !!this.autoSalvage));
                 }
             }
             return;
         }
 
-        // Spike Factory: drops spikes on nearest track
         if (this.typeId === 'spike_factory') {
             this.cooldown -= dt;
             if (this.cooldown <= 0 && game.roundInProgress) {
                 this.cooldown = 1.0 / this.fireRate;
-                // Find closest point on path within range
-                let bestPt = null;
-                let bestD = this.range;
-                for (let dist = 0; dist < game.gameMap.totalLength; dist += 20) {
+                let candidates = [];
+                for (let dist = 0; dist < game.gameMap.totalLength; dist += 18) {
                     const pt = game.gameMap.getPointAtDistance(dist);
                     const d = Math.hypot(this.x - pt.x, this.y - pt.y);
-                    if (d < bestD) {
-                        bestD = d;
-                        bestPt = pt;
+                    if (d <= this.range) {
+                        candidates.push(pt);
                     }
                 }
-                if (bestPt) {
-                    const item = new TrackItem('road_spikes', bestPt.x, bestPt.y);
-                    item.spikesRemaining = this.spikesPerPile;
+                if (candidates.length > 0) {
+                    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+                    const item = new TrackItem('road_spikes', chosen.x, chosen.y, {
+                        spikes: this.spikesPerPile,
+                        canPopLead: this.canPopLead,
+                        explodesOnEnd: this.explodesOnEnd,
+                        tower: this
+                    });
                     game.trackItems.push(item);
                 }
             }
             return;
         }
 
-        // Tack Shooter / Ring of Fire: triggers when any bloon in range
         if (this.typeId === 'tack_shooter') {
             this.cooldown -= dt;
             const target = this.findTarget(game);
@@ -478,9 +472,8 @@ class Tower {
                 this.cooldown = 1.0 / this.fireRate;
                 window.soundEngine.playDart();
                 if (this.isRingOfFire) {
-                    // Fire ring blast
                     for (let a = 0; a < 360; a += 30) {
-                        const rad = Math.radians ? Math.radians(a) : (a * Math.PI / 180);
+                        const rad = a * Math.PI / 180;
                         game.projectiles.push(new Projectile({
                             tower: this,
                             x: this.x,
@@ -492,11 +485,11 @@ class Tower {
                             range: this.range,
                             angle: rad,
                             attackType: 'fire',
-                            canPopLead: true
+                            canPopLead: true,
+                            canPopFrozen: true
                         }));
                     }
                 } else {
-                    // 8 Tacks or Blades
                     const projType = this.isBlade ? 'blade' : 'tack';
                     for (let a = 0; a < 360; a += 45) {
                         const rad = a * Math.PI / 180;
@@ -518,25 +511,28 @@ class Tower {
             return;
         }
 
-        // Ice Tower: freezes nearby bloons in radial pulse
         if (this.typeId === 'ice_tower') {
             this.cooldown -= dt;
             const target = this.findTarget(game);
             if (target && this.cooldown <= 0) {
                 this.cooldown = 1.0 / this.fireRate;
                 window.soundEngine.playFreeze();
-                // Freeze all bloons in range
-                for (const b of game.bloons) {
+                for (let i = game.bloons.length - 1; i >= 0; i--) {
+                    const b = game.bloons[i];
                     if (b.markedForRemoval) continue;
                     if (b.camo && !this.camoDetect) continue;
                     if (Math.hypot(b.x - this.x, b.y - this.y) <= this.range) {
                         b.applyFreeze(this.freezeDuration);
                         if (this.damage > 0) {
-                            const res = b.takeDamage(this.damage, 'ice', this);
+                            const res = b.takeDamage(this.damage, 'ice', this, game.gameMap);
                             if (res.popped) {
                                 game.addCash(res.cash);
+                                game.stats.totalPops += res.popCount;
                                 this.pops += res.popCount;
-                                for (const c of res.children) game.bloons.push(c);
+                                for (const c of res.children) {
+                                    if (this.deepFreeze) c.applyFreeze(this.freezeDuration);
+                                    game.bloons.push(c);
+                                }
                             }
                         }
                     }
@@ -545,7 +541,6 @@ class Tower {
             return;
         }
 
-        // Mortar Monkey: shells target reticle
         if (this.typeId === 'mortar_monkey') {
             this.cooldown -= dt;
             if (this.cooldown <= 0 && game.roundInProgress) {
@@ -563,18 +558,19 @@ class Tower {
                     attackType: 'explosion',
                     isExplosive: true,
                     blastRadius: this.blastRadius,
+                    stuns: this.stuns,
+                    burns: this.burns,
+                    decamo: this.decamo,
                     camo: true
                 }));
             }
             return;
         }
 
-        // Standard Directed Targeting Towers (Dart, Sniper, Boomerang, Bomb, Glue, Super, Buccaneer)
         this.cooldown -= dt;
         const target = this.findTarget(game);
         if (!target) return;
 
-        // Aim at target
         this.angle = Math.atan2(target.y - this.y, target.x - this.x);
 
         if (this.cooldown <= 0) {
@@ -584,14 +580,14 @@ class Tower {
     }
 
     fireAt(target, game) {
-        // 1. Sniper Monkey (Instant hitscan)
         if (this.typeId === 'sniper_monkey') {
-            window.soundEngine.playDart();
+            window.soundEngine.playSniper();
             let effectiveDmg = this.damage;
             if (target.isBlimp) effectiveDmg *= 2;
-            const res = target.takeDamage(effectiveDmg, this.canPopLead ? 'plasma' : 'sharp', this);
+            const res = target.takeDamage(effectiveDmg, this.canPopLead ? 'plasma' : 'sharp', this, game.gameMap);
             if (res.popped) {
                 game.addCash(res.cash);
+                game.stats.totalPops += res.popCount;
                 this.pops += res.popCount;
                 window.soundEngine.playPop();
                 game.spawnPopFX(target.x, target.y);
@@ -600,21 +596,25 @@ class Tower {
             return;
         }
 
-        // 2. Dart Monkey
         if (this.typeId === 'dart_monkey') {
             window.soundEngine.playDart();
+            const pType = this.isSpikePult ? 'glaive' : 'dart';
+            const pRadius = this.isSpikePult ? 13 : 8;
             if (this.tripleDart) {
                 for (const offsetAngle of [-0.2, 0, 0.2]) {
                     game.projectiles.push(new Projectile({
                         tower: this,
                         x: this.x,
                         y: this.y,
-                        type: 'dart',
+                        type: pType,
+                        radius: pRadius,
                         damage: this.damage,
                         pierce: this.pierce,
                         speed: 460,
                         range: this.range,
                         angle: this.angle + offsetAngle,
+                        canPopLead: this.isSpikePult,
+                        canPopFrozen: this.isSpikePult,
                         camo: this.camoDetect
                     }));
                 }
@@ -623,19 +623,21 @@ class Tower {
                     tower: this,
                     x: this.x,
                     y: this.y,
-                    type: 'dart',
+                    type: pType,
+                    radius: pRadius,
                     damage: this.damage,
                     pierce: this.pierce,
                     speed: 440,
                     range: this.range,
                     angle: this.angle,
+                    canPopLead: this.isSpikePult,
+                    canPopFrozen: this.isSpikePult,
                     camo: this.camoDetect
                 }));
             }
             return;
         }
 
-        // 3. Boomerang Monkey
         if (this.typeId === 'boomerang_monkey') {
             window.soundEngine.playDart();
             game.projectiles.push(new Projectile({
@@ -651,12 +653,12 @@ class Tower {
                 isBoomerang: !this.isRicochet,
                 isGlaive: this.isRicochet,
                 canPopLead: this.canPopLead,
-                canPopFrozen: this.canPopFrozen
+                canPopFrozen: this.canPopFrozen,
+                camo: this.camoDetect
             }));
             return;
         }
 
-        // 4. Bomb Tower
         if (this.typeId === 'bomb_tower') {
             window.soundEngine.playDart();
             game.projectiles.push(new Projectile({
@@ -674,12 +676,12 @@ class Tower {
                 attackType: 'explosion',
                 isExplosive: true,
                 blastRadius: this.blastRadius,
-                cluster: this.cluster
+                cluster: this.cluster,
+                camo: this.camoDetect
             }));
             return;
         }
 
-        // 5. Glue Gunner
         if (this.typeId === 'glue_gunner') {
             window.soundEngine.playDart();
             game.projectiles.push(new Projectile({
@@ -694,82 +696,85 @@ class Tower {
                 angle: this.angle,
                 glues: true,
                 glueSlow: this.glueSlow,
-                corrosive: this.corrosive
+                corrosive: this.corrosive || this.bloonDissolver,
+                glueSoak: this.glueSoak,
+                corrosiveDamage: this.bloonDissolver ? 3 : 1,
+                camo: this.camoDetect
             }));
             return;
         }
 
-        // 6. Super Monkey
         if (this.typeId === 'super_monkey') {
-            if (this.isSunGod) {
-                window.soundEngine.playLaser();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'sun_beam',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 700,
-                    range: this.range,
-                    angle: this.angle,
-                    canPopLead: true,
-                    canPopFrozen: true,
-                    camo: this.camoDetect
-                }));
-            } else if (this.isPlasma) {
-                window.soundEngine.playPlasma();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'plasma_orb',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 600,
-                    range: this.range,
-                    angle: this.angle,
-                    canPopLead: true,
-                    canPopFrozen: true,
-                    camo: this.camoDetect
-                }));
-            } else if (this.isLaser) {
-                window.soundEngine.playLaser();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'laser_beam',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 650,
-                    range: this.range,
-                    angle: this.angle,
-                    canPopFrozen: true,
-                    camo: this.camoDetect
-                }));
-            } else {
-                window.soundEngine.playDart();
-                game.projectiles.push(new Projectile({
-                    tower: this,
-                    x: this.x,
-                    y: this.y,
-                    type: 'dart',
-                    damage: this.damage,
-                    pierce: this.pierce,
-                    speed: 550,
-                    range: this.range,
-                    angle: this.angle,
-                    camo: this.camoDetect
-                }));
+            const angles = this.isRobo ? [this.angle - 0.1, this.angle + 0.1] : [this.angle];
+            for (const ang of angles) {
+                if (this.isSunGod) {
+                    window.soundEngine.playLaser();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'sun_beam',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 700,
+                        range: this.range,
+                        angle: ang,
+                        canPopLead: true,
+                        canPopFrozen: true,
+                        camo: this.camoDetect
+                    }));
+                } else if (this.isPlasma) {
+                    window.soundEngine.playPlasma();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'plasma_orb',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 600,
+                        range: this.range,
+                        angle: ang,
+                        canPopLead: true,
+                        canPopFrozen: true,
+                        camo: this.camoDetect
+                    }));
+                } else if (this.isLaser) {
+                    window.soundEngine.playLaser();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'laser_beam',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 650,
+                        range: this.range,
+                        angle: ang,
+                        canPopFrozen: true,
+                        camo: this.camoDetect
+                    }));
+                } else {
+                    window.soundEngine.playDart();
+                    game.projectiles.push(new Projectile({
+                        tower: this,
+                        x: this.x,
+                        y: this.y,
+                        type: 'dart',
+                        damage: this.damage,
+                        pierce: this.pierce,
+                        speed: 550,
+                        range: this.range,
+                        angle: ang,
+                        camo: this.camoDetect
+                    }));
+                }
             }
             return;
         }
 
-        // 7. Monkey Buccaneer (Water)
         if (this.typeId === 'monkey_buccaneer') {
             window.soundEngine.playDart();
-            // Dual broadside cannons firing port & starboard + center dart
             game.projectiles.push(new Projectile({
                 tower: this,
                 x: this.x,
@@ -782,6 +787,25 @@ class Tower {
                 angle: this.angle,
                 camo: this.camoDetect
             }));
+            if (this.hasCannon) {
+                game.projectiles.push(new Projectile({
+                    tower: this,
+                    x: this.x,
+                    y: this.y,
+                    targetX: target.x,
+                    targetY: target.y,
+                    type: 'bomb',
+                    damage: this.damage,
+                    pierce: 15,
+                    speed: 380,
+                    range: this.range * 1.15,
+                    angle: this.angle,
+                    attackType: 'explosion',
+                    isExplosive: true,
+                    blastRadius: 45,
+                    camo: this.camoDetect
+                }));
+            }
             if (this.grapeShot) {
                 for (const g of [-0.3, -0.15, 0.15, 0.3]) {
                     game.projectiles.push(new Projectile({
@@ -793,7 +817,8 @@ class Tower {
                         pierce: 1,
                         speed: 420,
                         range: this.range * 0.8,
-                        angle: this.angle + g
+                        angle: this.angle + g,
+                        camo: this.camoDetect
                     }));
                 }
             }
@@ -802,7 +827,19 @@ class Tower {
     }
 
     render(ctx, isSelected = false) {
-        // Draw selection / range circle
+        if (this.isArctic) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(135, 206, 250, 0.14)';
+            ctx.strokeStyle = 'rgba(173, 216, 230, 0.45)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.range + 20, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if (isSelected) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
@@ -812,7 +849,6 @@ class Tower {
             ctx.fill();
             ctx.stroke();
 
-            // Mortar reticle indicator
             if (this.typeId === 'mortar_monkey' && projImageCache.mortar_reticle.complete) {
                 ctx.drawImage(projImageCache.mortar_reticle, this.reticleX - 24, this.reticleY - 24, 48, 48);
             }
@@ -821,8 +857,7 @@ class Tower {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        // Directional rotation for aiming towers
-        const rotatableTowers = ['dart_monkey', 'bomb_tower', 'sniper_monkey', 'super_monkey', 'glue_gunner', 'boomerang_monkey'];
+        const rotatableTowers = ['dart_monkey', 'bomb_tower', 'sniper_monkey', 'super_monkey', 'glue_gunner', 'boomerang_monkey', 'monkey_buccaneer'];
         if (rotatableTowers.includes(this.typeId)) {
             ctx.rotate(this.angle);
         }
@@ -831,7 +866,6 @@ class Tower {
         if (img && img.complete) {
             ctx.drawImage(img, -24, -24, 48, 48);
         } else {
-            // Fallback
             ctx.fillStyle = '#8b5a2b';
             ctx.beginPath();
             ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
@@ -841,3 +875,7 @@ class Tower {
         ctx.restore();
     }
 }
+
+// Global exposure
+window.Tower = Tower;
+window.TOWER_DEFINITIONS = TOWER_DEFINITIONS;
